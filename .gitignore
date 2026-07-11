@@ -8,3 +8,4 @@ collector/dist/
 .DS_Store
 spike/private/
 .gstack/
+dev-pgdata/
