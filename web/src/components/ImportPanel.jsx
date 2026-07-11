@@ -16,7 +16,7 @@ export default function ImportPanel({ onImported }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch {
-      setError("Couldn't load the snippet — refresh and try again.");
+      setError("Couldn't load the snippet. Refresh and try again.");
     }
   };
 
@@ -58,7 +58,7 @@ export default function ImportPanel({ onImported }) {
       <h2>Import your Watch Later</h2>
       <p>
         YouTube doesn't let any app read your Watch Later directly, so you export it
-        yourself — in your own browser, in about a minute. Nothing to install.
+        yourself, in your own browser, in about a minute. Nothing to install.
       </p>
       <div className="importer__steps">
         <div className="istep">
@@ -78,8 +78,7 @@ export default function ImportPanel({ onImported }) {
             <b>Open the browser console on that page</b>
             <p>
               Press <code>⌥⌘J</code> (Mac) or <code>Ctrl+Shift+J</code> (Windows).
-              If Chrome asks, type <code>allow pasting</code> and press Enter first —
-              that's Chrome's own safety check.
+              If Chrome asks, type <code>allow pasting</code> and press Enter first. That's Chrome's own safety check.
             </p>
           </div>
         </div>
@@ -120,7 +119,7 @@ export default function ImportPanel({ onImported }) {
         </div>
       </div>
       <p className="importer__privacy">
-        The collector runs only in your browser and only reads your list — no passwords,
+        The collector runs only in your browser and only reads your list. No passwords,
         no cookies, nothing sent anywhere until you paste it here. We store the video
         titles and metadata you import, and never touch your YouTube account.
       </p>

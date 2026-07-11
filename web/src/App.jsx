@@ -44,10 +44,10 @@ function AuthGate() {
       <div className="authgate__card">
         <span className="brand__mark" style={{ width: 48, height: 48 }}><BoardIcon size={24} /></span>
         <h1>Watch Later Librarian</h1>
-        <p>Your Watch Later is a graveyard. Sign in and let the librarian sort it — your first 100 videos are free.</p>
+        <p>Your Watch Later is a graveyard. Sign in and let the librarian sort it. Your first 100 videos are free.</p>
         {isDevAuth ? (
           <form className="authgate__dev" onSubmit={(e) => { e.preventDefault(); if (email.includes("@")) { signInDev(email); location.reload(); } }}>
-            <input type="email" placeholder="dev mode — any email" value={email}
+            <input type="email" placeholder="dev mode: any email" value={email}
               onChange={(e) => setEmail(e.target.value)} aria-label="Email for dev sign-in" />
             <button className="btn btn--primary" type="submit">Enter</button>
           </form>
@@ -57,7 +57,7 @@ function AuthGate() {
           </button>
         )}
         <span className="authgate__fine">
-          We only see your email. Your YouTube account stays yours — no passwords, no account access.
+          We only see your email. Your YouTube account stays yours. No passwords, no account access.
           {" "}<a href="/privacy.html">Privacy</a>
         </span>
       </div>
@@ -115,7 +115,7 @@ export default function App() {
       if (m?.plan === "pro") {
         clearInterval(t);
         setMe(m);
-        showToast("Welcome to Pro — sort the rest whenever you're ready ✦");
+        showToast("Welcome to Pro. Sort the rest whenever you're ready ✦");
       } else if (++tries > 15) clearInterval(t);
     }, 2000);
     return () => clearInterval(t);
@@ -178,11 +178,11 @@ export default function App() {
 
   const move = async (id, category) => {
     await api.setCategory(id, category);
-    showToast(`Moved to ${category} — the AI learns from your corrections ✦`);
+    showToast(`Moved to ${category}. The AI learns from your corrections ✦`);
     reload();
   };
   const dismiss = async (id) => { await api.dismissVideo(id); reload(); };
-  const done = async (id) => { await api.markDone([id]); showToast("Marked done — it's on your cleanup checklist"); reload(); };
+  const done = async (id) => { await api.markDone([id]); showToast("Marked done. It's on your cleanup checklist"); reload(); };
 
   const onImported = async (result) => {
     const bits = [`${result.added.toLocaleString()} new videos imported`];
@@ -279,7 +279,7 @@ export default function App() {
             <span className="empty-hero__icon"><UploadIcon size={30} /></span>
             <h2>Your library is empty</h2>
             <p>
-              Import your Watch Later and the librarian sorts every video into five rows —
+              Import your Watch Later and the librarian sorts every video into five rows:
               what's worth learning from, worth watching, music, fun, and what's gone stale.
               Your first {me.freeQuota} are free.
             </p>

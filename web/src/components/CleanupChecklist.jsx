@@ -10,7 +10,7 @@ export default function CleanupChecklist() {
     <div className="history">
       <p className="history__hint">
         <HistoryIcon size={15} />
-        Everything here is dealt with — safe to remove from your real Watch Later on YouTube.
+        Everything here is dealt with, safe to remove from your real Watch Later on YouTube.
         One-click bulk removal is coming with the browser extension.
       </p>
       <table>
@@ -30,7 +30,7 @@ export default function CleanupChecklist() {
               <td>{v.channel}</td>
             </tr>
           ))}
-          {rows.length === 0 && <tr><td colSpan="3">nothing dealt with yet — mark videos done or dismiss them from the board</td></tr>}
+          {rows.length === 0 && <tr><td colSpan="3">nothing dealt with yet. Mark videos done or dismiss them from the board</td></tr>}
         </tbody>
       </table>
     </div>

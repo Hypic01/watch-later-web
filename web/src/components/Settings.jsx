@@ -46,8 +46,8 @@ export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
         <div className="settings__row">
           <p>
             {me.plan === "pro"
-              ? "Pro — your whole backlog gets sorted."
-              : `Free — your first ${me.freeQuota} videos are sorted (${me.freeUsed} used).`}
+              ? "Pro. Your whole backlog gets sorted."
+              : `Free. Your first ${me.freeQuota} videos are sorted (${me.freeUsed} used).`}
           </p>
           {me.plan === "pro" && !me.isAdmin && (
             <button className="btn btn--ghost" disabled={busy} onClick={managePlan}>
@@ -63,7 +63,7 @@ export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
           <p>
             {me.tasteProfile?.interests?.length
               ? `Interests: ${me.tasteProfile.interests.join(", ")}`
-              : "No interests set — the AI judges generically."}
+              : "No interests set. The AI judges generically."}
           </p>
           <button className="btn btn--ghost" onClick={onRetakeQuiz}>Edit</button>
         </div>

@@ -22,7 +22,7 @@ export default function JobProgress({ job, onCancelled }) {
         </span>
         {waiting && (
           <span className="syncband__note">
-            Big import — this runs in the background for up to an hour. You can close this tab and come back.
+            Big import: this runs in the background for up to an hour. You can close this tab and come back.
           </span>
         )}
         <div className="topbar__spacer" />

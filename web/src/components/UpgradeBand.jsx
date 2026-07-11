@@ -14,7 +14,7 @@ export default function UpgradeBand({ me, lockedCount, onToast, onJobStarted }) 
     } catch (e) {
       onToast(
         e.status === 404
-          ? "Pro isn't open yet — you're early! Your first 100 stay free."
+          ? "Pro isn't open yet, you're early! Your first 100 stay free."
           : e.message
       );
       setBusy(false);
@@ -40,8 +40,8 @@ export default function UpgradeBand({ me, lockedCount, onToast, onJobStarted }) 
         <b>{lockedCount.toLocaleString()} more videos are waiting</b>
         <p>
           {isPro
-            ? "You're on Pro — sort the rest whenever you're ready."
-            : `Your first ${me.freeQuota} were sorted free. Pro sorts your whole backlog — up to ${Number(me.videoCap).toLocaleString()} videos.`}
+            ? "You're on Pro. Sort the rest whenever you're ready."
+            : `Your first ${me.freeQuota} were sorted free. Pro sorts your whole backlog, up to ${Number(me.videoCap).toLocaleString()} videos.`}
         </p>
       </div>
       {isPro ? (
