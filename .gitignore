@@ -7,3 +7,4 @@ collector/dist/
 *.local
 .DS_Store
 spike/private/
+.gstack/
