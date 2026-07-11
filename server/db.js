@@ -162,11 +162,13 @@ export function createDb(q) {
       return rows.length;
     },
 
+    // Videos that failed classification twice are excluded permanently
+    // (classify_attempts >= 2) so a broken chunk can never wedge a job.
     async getUnscanned(userId, limit) {
       const { rows } = await q.query(
         `SELECT video_id AS id, title, channel, duration_seconds, playlist_position, published_text
-         FROM videos WHERE user_id = $1 AND status = 'unscanned'
-         ORDER BY playlist_position NULLS LAST, first_seen_at
+         FROM videos WHERE user_id = $1 AND status = 'unscanned' AND classify_attempts < 2
+         ORDER BY classify_attempts, playlist_position NULLS LAST, first_seen_at
          LIMIT $2`,
         [userId, limit]
       );
@@ -175,10 +177,21 @@ export function createDb(q) {
 
     async countUnscanned(userId) {
       const { rows } = await q.query(
-        "SELECT count(*)::int AS n FROM videos WHERE user_id = $1 AND status = 'unscanned'",
+        "SELECT count(*)::int AS n FROM videos WHERE user_id = $1 AND status = 'unscanned' AND classify_attempts < 2",
         [userId]
       );
       return rows[0].n;
+    },
+
+    // Returns how many of the incremented videos just went permanently dead.
+    async incrementAttempts(userId, ids) {
+      const { rows } = await q.query(
+        `UPDATE videos SET classify_attempts = classify_attempts + 1
+         WHERE user_id = $1 AND video_id = ANY($2) AND status = 'unscanned'
+         RETURNING (classify_attempts >= 2) AS dead`,
+        [userId, ids]
+      );
+      return rows.filter((r) => r.dead).length;
     },
 
     // The idempotency guard: only unscanned, never overridden rows accept
@@ -254,17 +267,45 @@ export function createDb(q) {
       return rows[0] || null;
     },
 
-    // Atomic claim — safe under concurrent workers via SKIP LOCKED.
-    async claimNextJob() {
+    // Atomic claim — safe under concurrent workers via SKIP LOCKED. Takes a
+    // lease so poll-driven serverless advancers never double-work a job.
+    async claimNextJob(leaseSeconds = 60) {
       const { rows } = await q.query(
-        `UPDATE classify_jobs SET state = 'running', started_at = COALESCE(started_at, now())
+        `UPDATE classify_jobs SET state = 'running', started_at = COALESCE(started_at, now()),
+           lease_until = now() + ($1 || ' seconds')::interval
          WHERE id = (
            SELECT id FROM classify_jobs WHERE state = 'queued'
            ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
          )
-         RETURNING *`
+         RETURNING *`,
+        [String(leaseSeconds)]
       );
       return rows[0] || null;
+    },
+
+    // Re-acquire the right to work an in-flight job. Succeeds only when the
+    // previous lease expired (crashed invocation) or was never taken. force
+    // is for single-instance boot adoption only.
+    async leaseJob(id, leaseSeconds = 60, { force = false } = {}) {
+      const { rows } = await q.query(
+        `UPDATE classify_jobs SET lease_until = now() + ($2 || ' seconds')::interval
+         WHERE id = $1 AND state IN ('running','awaiting_batch')
+           AND ($3 OR lease_until IS NULL OR lease_until < now())
+         RETURNING *`,
+        [id, String(leaseSeconds), force]
+      );
+      return rows[0] || null;
+    },
+
+    async renewLease(id, leaseSeconds = 60) {
+      await q.query(
+        `UPDATE classify_jobs SET lease_until = now() + ($2 || ' seconds')::interval WHERE id = $1`,
+        [id, String(leaseSeconds)]
+      );
+    },
+
+    async releaseLease(id) {
+      await q.query("UPDATE classify_jobs SET lease_until = NULL WHERE id = $1", [id]);
     },
 
     async getJobsInState(states) {
@@ -279,6 +320,13 @@ export function createDb(q) {
       await q.query(
         "UPDATE classify_jobs SET processed = processed + $2, failed = failed + $3 WHERE id = $1",
         [id, processed || 0, failed || 0]
+      );
+    },
+
+    async setJobProgress(id, { processed, failed }) {
+      await q.query(
+        "UPDATE classify_jobs SET processed = $2, failed = $3 WHERE id = $1",
+        [id, processed, failed]
       );
     },
 

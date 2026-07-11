@@ -80,7 +80,36 @@ describe("sync jobs", () => {
     const j = await db.getJob(job.id);
     expect(j.state).toBe("completed");
     expect(j.failed).toBe(4);
-    expect(await db.countUnscanned(U1)).toBe(4); // stay unscanned for a future retry
+    // dead videos keep their unscanned status but leave the work queue
+    expect((await db.counts(U1)).unscanned).toBe(4);
+    expect(await db.countUnscanned(U1)).toBe(0);
+  });
+
+  it("a chunk that fails once retries and succeeds on the next pass", async () => {
+    await db.upsertFromImport(U1, vids(3), 10000);
+    const real = createFakeLlm();
+    let calls = 0;
+    const flaky = {
+      classifyChunk: async (prompt, schema) => {
+        if (++calls === 1) throw new Error("transient");
+        return real.classifyChunk(prompt, schema);
+      },
+    };
+    const job = await db.createJob(U1, { mode: "sync", tier: "free", total: 3 });
+    await makeWorker(flaky).tick();
+    const j = await db.getJob(job.id);
+    expect(j.state).toBe("completed");
+    expect(j.failed).toBe(0);
+    expect(await db.countUnscanned(U1)).toBe(0);
+  });
+
+  it("a live lease blocks other advancers; an expired one does not", async () => {
+    await db.upsertFromImport(U1, vids(4), 10000);
+    const job = await db.createJob(U1, { mode: "sync", tier: "free", total: 4 });
+    await db.claimNextJob(60);
+    expect(await db.leaseJob(job.id, 60)).toBeNull(); // held
+    await db.releaseLease(job.id);
+    expect((await db.leaseJob(job.id, 60))?.id).toBe(job.id); // free again
   });
 
   it("cancelled jobs are never picked up", async () => {
@@ -113,15 +142,23 @@ describe("sync jobs", () => {
 });
 
 describe("batch jobs", () => {
-  it("submits, awaits, applies unordered results, completes", async () => {
+  it("submits, awaits while processing, applies unordered results, completes", async () => {
     await db.upsertFromImport(U1, vids(60), 10000);
     const job = await db.createJob(U1, { mode: "batch", tier: "pro", total: 60 });
-    const worker = makeWorker();
-    await worker.tick(); // claims + submits
+    const inner = createFakeLlm();
+    let ready = false;
+    const slowBatch = {
+      ...inner,
+      classifyChunk: inner.classifyChunk.bind(inner),
+      getBatch: async (id) => (ready ? inner.getBatch(id) : { id, processing_status: "in_progress" }),
+    };
+    const worker = makeWorker(slowBatch);
+    await worker.tick(); // claims + submits; batch still processing
     let j = await db.getJob(job.id);
     expect(j.state).toBe("awaiting_batch");
     expect(j.anthropic_batch_id).toMatch(/^fakebatch_/);
-    await worker.tick(); // polls fake batch (already ended) + applies
+    ready = true;
+    await worker.tick(); // polls the now-ended batch + applies
     j = await db.getJob(job.id);
     expect(j.state).toBe("completed");
     expect(await db.countUnscanned(U1)).toBe(0);

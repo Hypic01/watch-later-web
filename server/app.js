@@ -71,6 +71,10 @@ export function createApp({ db, auth, importer, worker, billing, config, collect
   });
 
   app.get("/api/jobs/current", auth.required, async (req, res) => {
+    // Serverless mode: the user's own poll is what advances their job.
+    if (worker && config.serverless && (await db.getActiveJob(req.user.id))) {
+      await worker.tick({ budgetMs: config.pollAdvanceBudgetMs }).catch(() => {});
+    }
     const job = (await db.getActiveJob(req.user.id)) || (await db.getLatestJob(req.user.id));
     if (!job) return res.json({ job: null });
     res.json({
@@ -139,6 +143,16 @@ export function createApp({ db, auth, importer, worker, billing, config, collect
     app.post("/api/billing/checkout", auth.required, (req, res) => billing.createCheckout(req, res));
     app.get("/api/billing/portal", auth.required, (req, res) => billing.createPortal(req, res));
   }
+
+  // Cron backstop (Vercel sends Authorization: Bearer CRON_SECRET): catches
+  // abandoned batch jobs when nobody is polling.
+  app.get("/api/cron/advance", async (req, res) => {
+    if (!config.cronSecret || req.headers.authorization !== `Bearer ${config.cronSecret}`) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+    if (worker) await worker.tick({ budgetMs: 50000 }).catch(() => {});
+    res.json({ ok: true });
+  });
 
   // ---- admin ----
   app.get("/api/admin/stats", auth.admin, async (req, res) => {

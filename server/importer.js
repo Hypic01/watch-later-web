@@ -42,6 +42,9 @@ export function createImporter({ db, config }) {
 
   return {
     async handleImport(user, body) {
+      if (config.llmReady === false) {
+        return { status: 503, body: { error: "the sorting engine isn't configured yet — check back soon" } };
+      }
       if (config.betaAllowlist.length && !config.betaAllowlist.includes(user.email.toLowerCase()) && !user.isAdmin) {
         return { status: 403, body: { error: "the beta is invite-only right now — ask for an invite!" } };
       }
@@ -89,6 +92,9 @@ export function createImporter({ db, config }) {
     },
 
     async classifyRemaining(user) {
+      if (config.llmReady === false) {
+        return { status: 503, body: { error: "the sorting engine isn't configured yet — check back soon" } };
+      }
       const dbUser = await db.getUser(user.id);
       if (!isPro(user, dbUser)) {
         return { status: 402, body: { error: "sorting beyond your first 100 videos needs Pro", upgrade: true } };

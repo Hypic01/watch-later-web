@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build:web && npm run build:collector && cp collector/dist/collector.js web/dist/collector.js",
+  "outputDirectory": "web/dist",
+  "framework": null,
+  "functions": {
+    "api/index.js": { "maxDuration": 60, "memory": 1024 }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/index" },
+    { "source": "/app", "destination": "/app/index.html" }
+  ]
+}

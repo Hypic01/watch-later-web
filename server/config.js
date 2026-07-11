@@ -25,6 +25,12 @@ export function loadConfig(env = process.env) {
     adminEmails: (env.ADMIN_EMAILS || "").split(",").map((s) => s.trim()).filter(Boolean),
     betaAllowlist: (env.BETA_ALLOWLIST || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
 
+    // Serverless mode (Vercel): no interval worker exists, so user status
+    // polls advance due work in bounded bites, and a cron can backstop.
+    serverless: bool(env.VERCEL) || bool(env.SERVERLESS),
+    pollAdvanceBudgetMs: Number(env.POLL_ADVANCE_BUDGET_MS) || 8000,
+    cronSecret: env.CRON_SECRET || "",
+
     stripeSecretKey: env.STRIPE_SECRET_KEY || "",
     stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || "",
     stripePriceId: env.STRIPE_PRICE_ID || "",

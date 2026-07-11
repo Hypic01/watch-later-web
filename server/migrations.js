@@ -86,6 +86,16 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    // Serverless support: chunk-failure tracking must survive across
+    // invocations (no process memory), and jobs need a lease so concurrent
+    // poll-driven advancers never work the same job twice.
+    id: "002-serverless",
+    sql: `
+      ALTER TABLE videos ADD COLUMN IF NOT EXISTS classify_attempts int NOT NULL DEFAULT 0;
+      ALTER TABLE classify_jobs ADD COLUMN IF NOT EXISTS lease_until timestamptz;
+    `,
+  },
 ];
 
 export async function migrate(q) {
