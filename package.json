@@ -12,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.32.0",
+    "@anthropic-ai/sdk": "^0.111.0",
     "express": "^4.19.2",
     "jose": "^5.9.6",
     "pg": "^8.13.1",
