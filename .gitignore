@@ -9,3 +9,4 @@ collector/dist/
 spike/private/
 .gstack/
 dev-pgdata/
+.vercel
