@@ -24,10 +24,15 @@ export async function buildApp(env = process.env) {
   // ---- database ----
   let queryable;
   if (config.databaseUrl) {
+    // Supabase (and any hosted Postgres) requires TLS. rejectUnauthorized is
+    // false because the Supavisor pooler's cert doesn't chain to a root Node
+    // ships by default; traffic is still encrypted in transit.
+    const local = /localhost|127\.0\.0\.1/.test(config.databaseUrl);
     queryable = new pg.Pool({
       connectionString: config.databaseUrl,
       max: config.serverless ? 1 : 5,
       idleTimeoutMillis: config.serverless ? 10000 : 30000,
+      ssl: local ? false : { rejectUnauthorized: false },
     });
   } else {
     if (isProd) throw new Error("DATABASE_URL is required in production");
