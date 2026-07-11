@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy — Watch Later Librarian</title>
+  <meta name="theme-color" content="#0F172A" />
+  <style>
+    :root { color-scheme: dark; }
+    body { background: #0F172A; color: #F8FAFC; font-family: 'Fira Sans', -apple-system, sans-serif; line-height: 1.7; margin: 0; padding: 48px 24px 96px; }
+    main { max-width: 680px; margin: 0 auto; }
+    h1 { font-family: ui-monospace, monospace; letter-spacing: -.02em; }
+    h2 { font-size: 17px; margin-top: 36px; }
+    p, li { color: #94A3B8; font-size: 15px; }
+    b { color: #F8FAFC; }
+    a { color: #93C5FD; }
+    .updated { font-size: 13px; color: #64748B; font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <p class="updated">Last updated: July 10, 2026</p>
+
+  <h2>What we store</h2>
+  <ul>
+    <li><b>Your email address</b>, from Google sign-in. Used to identify your account and nothing else.</li>
+    <li><b>The video metadata you import</b>: video IDs, titles, channel names, durations, and playlist positions from the Watch Later list you chose to export.</li>
+    <li><b>AI classifications</b> of those videos (category, one-line reason, confidence, topics).</li>
+    <li><b>Your taste profile</b>, if you filled in the optional quiz.</li>
+    <li><b>Payment status</b> if you subscribe. Card details live with Stripe; we never see them.</li>
+  </ul>
+
+  <h2>What we never touch</h2>
+  <ul>
+    <li>Your YouTube password, cookies, or session. The collector runs in your own browser and only reads the playlist page.</li>
+    <li>Your watch history, subscriptions, or any other YouTube data.</li>
+    <li>Your playlists themselves. We never modify anything on YouTube.</li>
+  </ul>
+
+  <h2>How classification works</h2>
+  <p>Video titles and metadata are sent to Anthropic's Claude API to be sorted into categories. Anthropic does not train on this data. No other third parties see your library.</p>
+
+  <h2>Deleting your data</h2>
+  <p>Settings → Delete everything removes your account and every imported video immediately and permanently. No grace period, no soft delete.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or concerns: <a href="mailto:doldorijw@gmail.com">doldorijw@gmail.com</a></p>
+</main>
+</body>
+</html>
