@@ -35,6 +35,37 @@ end to end without Supabase, Anthropic, or Stripe credentials.
   bundled into the future MV3 extension (Chrome forbids remote code).
 - `web/` — Vite multi-page: marketing landing at `/`, React app at `/app`.
 
+## Production status
+
+Live at **https://watch-later-web.vercel.app** (Vercel project `watch-later-web`,
+Supabase project `fjykuzbwhrpzpiqxzjeh`, schema applied). Three env steps remain
+before strangers can fully use it — each is copy-paste:
+
+1. **Database password** (unblocks the whole API): Supabase dashboard →
+   project `watch-later-web` → Settings → Database → Reset database password. Then:
+
+       printf 'postgresql://postgres.fjykuzbwhrpzpiqxzjeh:<PASSWORD>@aws-0-us-west-1.pooler.supabase.com:6543/postgres' \
+         | vercel env add DATABASE_URL production
+       vercel deploy --prod --yes
+
+2. **Google sign-in**: Google Cloud Console → APIs & Services → Credentials →
+   Create OAuth client ID (Web application) with redirect URI
+   `https://fjykuzbwhrpzpiqxzjeh.supabase.co/auth/v1/callback`. Paste the client
+   ID + secret into Supabase → Authentication → Providers → Google. In Supabase →
+   Authentication → URL Configuration set Site URL `https://watch-later-web.vercel.app`
+   and add `https://watch-later-web.vercel.app/app` as a redirect URL.
+
+3. **Sorting engine**: create a key at console.anthropic.com, then:
+
+       printf 'sk-ant-...' | vercel env add ANTHROPIC_API_KEY production
+       vercel deploy --prod --yes
+
+Optional while testing: `BETA_ALLOWLIST` (comma-separated emails) gates imports.
+Stripe env (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`)
+turns on the upgrade flow whenever pricing is ready — keep test mode first.
+Note: Vercel's Hobby plan is for non-commercial use; move the project to Pro
+(or a paid team) when payments go live.
+
 ## Production setup (one-time)
 
 1. **Supabase**: create a project → Auth → enable Google provider (needs a GCP
