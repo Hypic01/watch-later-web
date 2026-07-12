@@ -67,7 +67,7 @@ describe("RESULT_SCHEMA", () => {
 });
 
 describe("validateResults", () => {
-  const ok = (id) => ({ id, category: "learn", reasoning: "r", confidence: 0.7, topics: ["design"] });
+  const ok = (id) => ({ id, category: "learn", reasoning: "r", confidence: 0.7, topics: ["tech"] });
 
   it("passes a clean result set", () => {
     const out = validateResults({ results: [ok("a"), ok("b")] }, ["a", "b"]);
@@ -83,10 +83,10 @@ describe("validateResults", () => {
 
   it("filters topics to the whitelist and defaults to other", () => {
     const out = validateResults(
-      { results: [{ ...ok("a"), topics: ["bogus", "design", "tech", "career"] }] },
+      { results: [{ ...ok("a"), topics: ["bogus", "music", "tech", "sports"] }] },
       ["a"]
     );
-    expect(out[0].topics).toEqual(["design", "tech"]);
+    expect(out[0].topics).toEqual(["music", "tech"]);
     const none = validateResults({ results: [{ ...ok("a"), topics: ["bogus"] }] }, ["a"]);
     expect(none[0].topics).toEqual(["other"]);
   });

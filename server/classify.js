@@ -8,10 +8,14 @@ import { CATEGORIES } from "./db.js";
 
 export class ClassificationError extends Error {}
 
+// General YouTube subject vocabulary. Shared by the onboarding quiz (what the
+// user watches) and the per-video topic tags shown as board filter chips.
+// "other" is the classifier's catch-all and is never offered in the quiz.
 export const TOPICS = [
-  "design", "ai-tools", "career", "music-production", "travel",
-  "food", "fitness", "camera-photo", "self-improvement", "finance",
-  "gaming", "diy-home", "relationships", "tech", "other",
+  "music", "gaming", "comedy", "movies & tv", "sports",
+  "news & politics", "learning & how-to", "tech", "science", "food & cooking",
+  "travel", "health & fitness", "beauty & fashion", "money & business",
+  "vlogs & daily life", "cars", "other",
 ];
 
 // JSON Schema for output_config.format. Numeric ranges are not supported in

@@ -100,10 +100,12 @@ export function createFakeLlm() {
   };
   const topicFor = (v) => {
     const t = `${v.title} ${v.channel}`.toLowerCase();
-    if (/design|ux|ui|figma/.test(t)) return "design";
-    if (/ai|claude|gpt|llm/.test(t)) return "ai-tools";
-    if (/career|job|resume|interview/.test(t)) return "career";
-    if (/game|gaming|tft|league/.test(t)) return "gaming";
+    if (/game|gaming|tft|league|minecraft|esports/.test(t)) return "gaming";
+    if (/music|mix|album|song|lofi|beats|\bdj\b/.test(t)) return "music";
+    if (/tech|\bai\b|claude|gpt|llm|code|dev|app|figma/.test(t)) return "tech";
+    if (/tutorial|how to|learn|guide|course|explain/.test(t)) return "learning & how-to";
+    if (/travel|tour|trip|vlog/.test(t)) return "travel";
+    if (/food|recipe|cook|kitchen/.test(t)) return "food & cooking";
     return "other";
   };
   const run = (prompt) => {

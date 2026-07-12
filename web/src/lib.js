@@ -25,9 +25,11 @@ export const parseTopics = (v) => {
   }
 };
 
-// The onboarding quiz shares the classifier's topic vocabulary.
+// The onboarding quiz shares the classifier's topic vocabulary (server/classify.js
+// TOPICS, minus the "other" catch-all). General YouTube genres, not one person's.
 export const INTEREST_OPTIONS = [
-  "design", "ai-tools", "career", "music-production", "travel",
-  "food", "fitness", "camera-photo", "self-improvement", "finance",
-  "gaming", "diy-home", "relationships", "tech",
+  "music", "gaming", "comedy", "movies & tv", "sports",
+  "news & politics", "learning & how-to", "tech", "science", "food & cooking",
+  "travel", "health & fitness", "beauty & fashion", "money & business",
+  "vlogs & daily life", "cars",
 ];
