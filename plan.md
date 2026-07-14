@@ -236,13 +236,59 @@ unpacked extension ID is stable across reloads.
 - No extension → **exactly today's behavior** (ImportPanel + console snippet), plus a card:
   "Get the Chrome extension for one-click sync" (hide on non-Chromium user agents).
 
+### M2 CRITICAL — the full-sync lockup gap (found in M1 review; do not skip)
+
+M1 shipped `extractLockupData`, which reads `node.data` off `yt-lockup-view-model` DOM
+elements. **That may harvest zero.** Two facts collide:
+
+1. `yt-lockup-view-model` is one of YouTube's newer, non-Polymer components. Polymer elements
+   expose page state as a `.data` expando; the newer view-model components **may not expose
+   `.data` at all**. Unverified, and unverifiable until YouTube actually serves lockups on WL.
+2. **`window.ytInitialData` does NOT update when you scroll.** It is the server-rendered first
+   batch, frozen. Continuation batches arrive over the network and are rendered straight into
+   the DOM; they never mutate `ytInitialData`.
+
+Consequence: if YouTube switches WL to lockups, **delta sync still works** (it reads
+`ytInitialData`, which is JSON and needs no DOM property), but **full sync silently collects
+only the first ~100 videos and reports success.** A user's 2,700-video first import would
+quietly become 100. Tests cannot catch this; only real YouTube can.
+
+**Required in M2 — network-level harvest as the full-sync backstop.** In
+`collector-driver.main.js` (MAIN world), before scrolling, monkey-patch `window.fetch` (and
+`XMLHttpRequest`) to capture responses from `/youtubei/v1/browse`. Feed each captured body
+through the **same** JSON extractors `parseInitialData` already uses (both
+`playlistVideoRenderer` and `lockupViewModel` shapes). Then:
+- Harvest = union of (DOM `.data` path, which is proven and stays primary) and (captured
+  continuation JSON). Dedupe by video id.
+- This makes full sync independent of whether any DOM property exists, and immune to DOM
+  churn entirely. It is strictly more robust than scraping rendered elements.
+- Cross-check the final count against `readPlaylistTotal`. If the harvest is materially short
+  of the playlist total, **fail loudly** rather than importing a truncated library. Silent
+  truncation is the worst possible failure mode here: the user's board looks fine and is wrong.
+- Restore the original `fetch`/`XHR` in a `finally` so we never leave the page patched.
+
+Factor the capture as a pure function (`collector/continuations.js`:
+`parseBrowseResponse(json)`) so it is unit-testable with a fixture, per repo convention.
+
 **Acceptance:** `tests/extension-sync.test.js` drives `createSyncController` with fake
 `{tabs, scripting, storage, api}` exactly like `createCollector` is driven with fake pages
 today: reuse-vs-create tab, delta vs full mode, `SIGNED_OUT` propagation, single-flight
 (second trigger while syncing is a no-op), SW-restart recovery from `storage.session`, import
-409/429 treated as benign skips. Manual: Joon loads `extension/dist` unpacked and one-click
-syncs against prod — **this is the moment his daily driver becomes the hosted product, and it
-happens before any store review.**
+409/429 treated as benign skips. Plus `tests/continuations.test.js`: `parseBrowseResponse` on
+both renderer and lockup fixtures, and a full-sync path that harvests correctly when the DOM
+yields **nothing** (simulating lockups without `.data`), and one that fails loudly when the
+harvest falls materially short of `readPlaylistTotal`. Manual: Joon loads `extension/dist`
+unpacked and one-click syncs against prod — **this is the moment his daily driver becomes the
+hosted product, and it happens before any store review.**
+
+### M2 auth guard rail (carry forward from M1)
+
+`importToken` sets `isAdmin` on token-authenticated requests, so an admin's `imports` token
+carries admin identity. This is contained today only because scope is enforced
+(`token.scope !== scope` rejects) and every admin route uses `auth.admin` → `auth.required`,
+which is JWT-only. **Never mount `jwtOrToken` on an admin-gated route, and never widen
+`auth.required` to accept tokens.** If that invariant breaks, a leaked imports token becomes
+an admin credential. Bridge routes (M7) must use the `bridge` scope, never `imports`.
 
 ---
 
