@@ -5,9 +5,21 @@
 
 import express from "express";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { CATEGORIES } from "./db.js";
+import { hashToken } from "./auth.js";
 
-export function createApp({ db, auth, importer, worker, billing, config, collectorPath }) {
+function publicApiToken(row) {
+  return {
+    id: row.id,
+    scope: row.scope,
+    label: row.label,
+    created_at: row.created_at,
+    last_used_at: row.last_used_at,
+  };
+}
+
+export function createApp({ db, auth, importer, worker, billing, config, collectorPath, randomBytes = crypto.randomBytes }) {
   const app = express();
 
   if (billing) {
@@ -15,6 +27,20 @@ export function createApp({ db, auth, importer, worker, billing, config, collect
       billing.handleWebhook(req, res)
     );
   }
+
+  const extensionOrigins = new Set(config.extensionOrigins || []);
+  app.use((req, res, next) => {
+    if (req.path !== "/api/imports") return next();
+    res.vary("Origin");
+    const origin = req.get("Origin");
+    if (origin && extensionOrigins.has(origin)) {
+      res.set("Access-Control-Allow-Origin", origin);
+      res.set("Access-Control-Allow-Headers", "content-type, x-import-token");
+      res.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+    }
+    if (req.method === "OPTIONS") return res.status(204).end();
+    next();
+  });
 
   app.use(express.json({ limit: "12mb" }));
 
@@ -59,8 +85,38 @@ export function createApp({ db, auth, importer, worker, billing, config, collect
     res.json({ ok: true });
   });
 
+  // ---- api tokens ----
+  app.post("/api/tokens", auth.required, async (req, res) => {
+    const scope = String(req.body?.scope || "");
+    if (!["imports", "bridge"].includes(scope)) return res.status(400).json({ error: "unknown token scope" });
+    if (scope === "bridge" && !req.user.isAdmin) return res.status(403).json({ error: "admin only" });
+    const label = String(req.body?.label || "").trim().slice(0, 100);
+    const token = "wll_" + randomBytes(32).toString("base64url");
+    const row = await db.createApiToken(req.user.id, {
+      tokenHash: hashToken(token),
+      scope,
+      label,
+    });
+    res.json({ token, ...publicApiToken(row) });
+  });
+
+  app.get("/api/tokens", auth.required, async (req, res) => {
+    const tokens = await db.listApiTokens(req.user.id);
+    res.json(tokens.map(publicApiToken));
+  });
+
+  app.delete("/api/tokens/:id", auth.required, async (req, res) => {
+    const id = req.params.id;
+    if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > 9223372036854775807n) {
+      return res.status(404).json({ error: "unknown token" });
+    }
+    const ok = await db.revokeApiToken(req.user.id, id);
+    if (!ok) return res.status(404).json({ error: "unknown token" });
+    res.json({ ok: true });
+  });
+
   // ---- imports & jobs ----
-  app.post("/api/imports", auth.required, async (req, res) => {
+  app.post("/api/imports", auth.jwtOrToken("imports"), async (req, res) => {
     const result = await importer.handleImport(req.user, req.body);
     res.status(result.status).json(result.body);
   });

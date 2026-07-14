@@ -28,6 +28,7 @@ describe("auth coverage", () => {
     await request(app).get("/api/health").expect(200);
     for (const [method, path] of [
       ["get", "/api/me"], ["put", "/api/me/taste"], ["delete", "/api/me"],
+      ["post", "/api/tokens"], ["get", "/api/tokens"], ["delete", "/api/tokens/1"],
       ["post", "/api/imports"], ["get", "/api/jobs/current"], ["post", "/api/jobs/1/cancel"],
       ["post", "/api/jobs/classify-remaining"], ["get", "/api/board"], ["get", "/api/status"],
       ["get", "/api/cleanup"], ["post", "/api/videos/x/category"], ["post", "/api/videos/x/dismiss"],

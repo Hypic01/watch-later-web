@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   isWatchLaterPage,
   extractVideoData,
+  extractLockupData,
+  EXTRACTORS,
+  parseInitialData,
+  readPlaylistTotal,
+  collectInitial,
   createCollector,
   buildPayload,
   PAYLOAD_VERSION,
@@ -17,6 +22,40 @@ function rendererData(overrides = {}) {
     lengthSeconds: "897",
     index: { simpleText: "1" },
     videoInfo: { runs: [{ text: "165K views" }, { text: " • " }, { text: "4 years ago" }] },
+    ...overrides,
+  };
+}
+
+function lockupData(overrides = {}) {
+  return {
+    contentId: "lockup12345",
+    contentType: "LOCKUP_CONTENT_TYPE_VIDEO",
+    contentImage: {
+      thumbnailViewModel: {
+        overlays: [{
+          thumbnailBottomOverlayViewModel: {
+            badges: [{ thumbnailBadgeViewModel: { text: "1:02:03" } }],
+          },
+        }],
+      },
+    },
+    metadata: {
+      lockupMetadataViewModel: {
+        title: { content: "A New YouTube Layout" },
+        metadata: {
+          contentMetadataViewModel: {
+            metadataRows: [
+              { metadataParts: [{ text: { content: "Layout Lab" } }] },
+              { metadataParts: [{ text: { content: "12K views" } }, { text: { content: "2 days ago" } }] },
+            ],
+            delimiter: " • ",
+          },
+        },
+      },
+    },
+    rendererContext: {
+      commandContext: { onTap: { innertubeCommand: { watchEndpoint: { videoId: "lockup12345" } } } },
+    },
     ...overrides,
   };
 }
@@ -67,6 +106,98 @@ describe("extractVideoData", () => {
     expect(extractVideoData(undefined)).toBeNull();
     expect(extractVideoData({})).toBeNull();
     expect(extractVideoData({ videoId: "" })).toBeNull();
+  });
+});
+
+describe("collector v2 data shapes", () => {
+  it("normalizes lockupViewModel data", () => {
+    expect(extractLockupData(lockupData())).toEqual({
+      id: "lockup12345",
+      title: "A New YouTube Layout",
+      channel: "Layout Lab",
+      durationSeconds: 3723,
+      position: null,
+      publishedText: "12K views • 2 days ago",
+    });
+    expect(extractLockupData({ lockupViewModel: lockupData() }).id).toBe("lockup12345");
+    expect(extractLockupData(lockupData({ contentType: "LOCKUP_CONTENT_TYPE_PLAYLIST" }))).toBeNull();
+  });
+
+  it("parses playlistVideoRenderer entries from ytInitialData", () => {
+    const win = {
+      ytInitialData: {
+        contents: [{ playlistVideoRenderer: vid("initial-old", 7) }],
+      },
+    };
+    expect(parseInitialData(win)).toEqual([
+      expect.objectContaining({ id: "initial-old", position: 7 }),
+    ]);
+  });
+
+  it("parses lockupViewModel entries from ytInitialData", () => {
+    const win = {
+      ytInitialData: {
+        contents: [{ lockupViewModel: lockupData() }],
+      },
+    };
+    expect(parseInitialData(win)).toEqual([
+      {
+        id: "lockup12345",
+        title: "A New YouTube Layout",
+        channel: "Layout Lab",
+        durationSeconds: 3723,
+        position: 1,
+        publishedText: "12K views • 2 days ago",
+      },
+    ]);
+  });
+
+  it("uses the first extractor selector that returns nodes", () => {
+    expect(EXTRACTORS.map((entry) => entry.selector)).toEqual([
+      "ytd-playlist-video-renderer",
+      "yt-lockup-view-model",
+    ]);
+    const queried = [];
+    const doc = {
+      querySelectorAll(selector) {
+        queried.push(selector);
+        return selector === "yt-lockup-view-model" ? [{ data: lockupData() }] : [];
+      },
+    };
+    expect(collectInitial({ doc, win: {} }).map((video) => video.id)).toEqual(["lockup12345"]);
+    expect(queried).toEqual(["ytd-playlist-video-renderer", "yt-lockup-view-model"]);
+  });
+
+  it("collects initial JSON and DOM data without scrolling or pruning", () => {
+    let scrollCount = 0;
+    let removeCount = 0;
+    const win = {
+      ytInitialData: { contents: [{ playlistVideoRenderer: vid("initial", 1) }] },
+      scrollTo() { scrollCount++; },
+    };
+    const doc = {
+      querySelectorAll(selector) {
+        if (selector !== "ytd-playlist-video-renderer") return [];
+        return [{ data: vid("dom", 2), remove() { removeCount++; } }];
+      },
+    };
+    expect(collectInitial({ doc, win }).map((video) => video.id)).toEqual(["initial", "dom"]);
+    expect(scrollCount).toBe(0);
+    expect(removeCount).toBe(0);
+  });
+
+  it("reads the formatted playlist total", () => {
+    const win = {
+      ytInitialData: {
+        header: {
+          playlistHeaderRenderer: {
+            numVideosText: { runs: [{ text: "2,796" }, { text: " videos" }] },
+          },
+        },
+      },
+    };
+    expect(readPlaylistTotal(win)).toBe(2796);
+    expect(readPlaylistTotal({})).toBeNull();
   });
 });
 

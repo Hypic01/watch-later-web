@@ -29,6 +29,9 @@ const post = (url, body) => call(url, { method: "POST", body: body ? JSON.string
 export const getMe = () => call("/api/me");
 export const saveTaste = (profile) => call("/api/me/taste", { method: "PUT", body: JSON.stringify(profile) });
 export const deleteAccount = () => call("/api/me", { method: "DELETE" });
+export const listTokens = () => call("/api/tokens");
+export const createToken = ({ scope, label }) => post("/api/tokens", { scope, label });
+export const revokeToken = (id) => call(`/api/tokens/${id}`, { method: "DELETE" });
 export const getBoard = () => call("/api/board");
 export const getStatus = () => call("/api/status");
 export const getCleanup = () => call("/api/cleanup");

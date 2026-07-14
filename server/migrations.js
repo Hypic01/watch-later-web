@@ -96,6 +96,21 @@ export const MIGRATIONS = [
       ALTER TABLE classify_jobs ADD COLUMN IF NOT EXISTS lease_until timestamptz;
     `,
   },
+  {
+    id: "003-api-tokens",
+    sql: `
+      CREATE TABLE api_tokens (
+        id bigserial PRIMARY KEY,
+        user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        token_hash text NOT NULL UNIQUE,
+        scope text NOT NULL CHECK (scope IN ('imports','bridge')),
+        label text NOT NULL DEFAULT '',
+        created_at timestamptz NOT NULL DEFAULT now(),
+        last_used_at timestamptz,
+        revoked_at timestamptz
+      );
+    `,
+  },
 ];
 
 export async function migrate(q) {

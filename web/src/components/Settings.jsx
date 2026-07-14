@@ -1,10 +1,26 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import * as api from "../api.js";
 import { signOut } from "../auth.js";
 import { ArrowLeftIcon, LogOutIcon } from "./icons.jsx";
 
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
+const formatDate = (value) => DATE_FORMAT.format(new Date(value));
+
 export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
   const [busy, setBusy] = useState(false);
+  const [tokens, setTokens] = useState([]);
+  const [tokensLoading, setTokensLoading] = useState(true);
+  const [tokenBusy, setTokenBusy] = useState(null);
+  const [generatedToken, setGeneratedToken] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    api.listTokens()
+      .then((items) => { if (active) setTokens(items); })
+      .catch((e) => { if (active) onToast(e.message); })
+      .finally(() => { if (active) setTokensLoading(false); });
+    return () => { active = false; };
+  }, [onToast]);
 
   const managePlan = async () => {
     setBusy(true);
@@ -22,6 +38,46 @@ export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
     if (!window.confirm("Really delete everything?")) return;
     await api.deleteAccount();
     await signOut();
+  };
+
+  const generateBridgeToken = async () => {
+    setTokenBusy("create");
+    try {
+      const created = await api.createToken({ scope: "bridge", label: "Vault bridge" });
+      const { token, ...metadata } = created;
+      setGeneratedToken({ id: metadata.id, value: token });
+      setTokens((current) => [metadata, ...current.filter((item) => item.id !== metadata.id)]);
+      onToast("Bridge token generated.");
+    } catch (e) {
+      onToast(e.message);
+    } finally {
+      setTokenBusy(null);
+    }
+  };
+
+  const revokeToken = async (token) => {
+    const name = token.label || "this app";
+    if (!window.confirm(`Revoke access for ${name}?`)) return;
+    setTokenBusy(token.id);
+    try {
+      await api.revokeToken(token.id);
+      setTokens((current) => current.filter((item) => item.id !== token.id));
+      setGeneratedToken((current) => current?.id === token.id ? null : current);
+      onToast("Access revoked.");
+    } catch (e) {
+      onToast(e.message);
+    } finally {
+      setTokenBusy(null);
+    }
+  };
+
+  const copyGeneratedToken = async () => {
+    try {
+      await navigator.clipboard.writeText(generatedToken.value);
+      onToast("Token copied.");
+    } catch {
+      onToast("Copy failed. Select the token and copy it manually.");
+    }
   };
 
   return (
@@ -67,6 +123,62 @@ export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
           </p>
           <button className="btn btn--ghost" onClick={onRetakeQuiz}>Edit</button>
         </div>
+      </div>
+
+      <div className="settings__block">
+        <div className="settings__section-head">
+          <div>
+            <h3>Connected apps</h3>
+            <p className="settings__hint">Review apps that can send videos to your library.</p>
+          </div>
+          {me.isAdmin ? (
+            <button className="btn btn--ghost" disabled={tokenBusy !== null || generatedToken !== null}
+              onClick={generateBridgeToken}>
+              Generate bridge token
+            </button>
+          ) : null}
+        </div>
+
+        {generatedToken ? (
+          <div className="settings__token-reveal">
+            <p id="bridge-token-warning" role="status">Copy this token now. It will not be shown again.</p>
+            <div className="settings__secret-row">
+              <input value={generatedToken.value} readOnly spellCheck="false" autoComplete="off"
+                aria-label="Generated bridge token" aria-describedby="bridge-token-warning"
+                onFocus={(event) => event.currentTarget.select()} />
+              <button className="btn btn--primary" onClick={copyGeneratedToken}>Copy token</button>
+              <button className="btn btn--ghost" onClick={() => setGeneratedToken(null)}>Done</button>
+            </div>
+          </div>
+        ) : null}
+
+        {tokensLoading ? (
+          <p className="settings__hint">Loading connected apps…</p>
+        ) : tokens.length === 0 ? (
+          <p className="settings__hint">No connected apps yet.</p>
+        ) : (
+          <div className="settings__tokens">
+            {tokens.map((token) => (
+              <div className="settings__token" key={token.id}>
+                <div className="settings__token-copy">
+                  <div className="settings__token-title">
+                    <strong>{token.label || "Connected app"}</strong>
+                    <span>{token.scope === "bridge" ? "Bridge" : "Imports"}</span>
+                  </div>
+                  <p>
+                    Created {formatDate(token.created_at)}. {token.last_used_at
+                      ? `Last used ${formatDate(token.last_used_at)}.`
+                      : "Never used."}
+                  </p>
+                </div>
+                <button className="btn btn--danger" disabled={tokenBusy !== null}
+                  onClick={() => revokeToken(token)} aria-label={`Revoke ${token.label || "connected app"}`}>
+                  Revoke
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="settings__block settings__danger">

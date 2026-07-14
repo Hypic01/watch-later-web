@@ -54,6 +54,56 @@ export function createDb(q) {
       await q.query("DELETE FROM users WHERE id = $1", [id]);
     },
 
+    // ---- api tokens ----
+    async createApiToken(userId, { tokenHash, scope, label = "" }) {
+      const { rows } = await q.query(
+        `INSERT INTO api_tokens (user_id, token_hash, scope, label)
+         VALUES ($1, $2, $3, $4)
+         RETURNING id, scope, label, created_at, last_used_at`,
+        [userId, tokenHash, scope, label]
+      );
+      return rows[0];
+    },
+
+    async getApiTokenByHash(tokenHash) {
+      const { rows } = await q.query(
+        "SELECT id, user_id, scope, revoked_at FROM api_tokens WHERE token_hash = $1",
+        [tokenHash]
+      );
+      return rows[0] || null;
+    },
+
+    async listApiTokens(userId) {
+      const { rows } = await q.query(
+        `SELECT id, scope, label, created_at, last_used_at FROM api_tokens
+         WHERE user_id = $1 AND revoked_at IS NULL
+         ORDER BY created_at DESC, id DESC`,
+        [userId]
+      );
+      return rows;
+    },
+
+    async revokeApiToken(userId, id) {
+      const { rows } = await q.query(
+        `UPDATE api_tokens SET revoked_at = now()
+         WHERE user_id = $1 AND id = $2 AND revoked_at IS NULL
+         RETURNING id`,
+        [userId, id]
+      );
+      return rows.length > 0;
+    },
+
+    async touchApiToken(id) {
+      const { rows } = await q.query(
+        `UPDATE api_tokens SET last_used_at = now()
+         WHERE id = $1 AND revoked_at IS NULL
+           AND (last_used_at IS NULL OR last_used_at < now() - interval '5 minutes')
+         RETURNING id`,
+        [id]
+      );
+      return rows.length > 0;
+    },
+
     // ---- videos ----
     async upsertFromImport(userId, videos, cap) {
       let added = 0;

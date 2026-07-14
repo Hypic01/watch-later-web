@@ -22,6 +22,8 @@ export function loadConfig(env = process.env) {
     budgetUsd: Number(env.BUDGET_USD) || 100,
     importsPerHour: Number(env.IMPORTS_PER_HOUR) || 5,
 
+    extensionOrigins: (env.EXTENSION_IDS || "").split(",").map((s) => s.trim()).filter(Boolean)
+      .map((id) => `chrome-extension://${id}`),
     adminEmails: (env.ADMIN_EMAILS || "").split(",").map((s) => s.trim()).filter(Boolean),
     betaAllowlist: (env.BETA_ALLOWLIST || "").split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
 

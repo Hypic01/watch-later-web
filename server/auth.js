@@ -6,6 +6,10 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import crypto from "node:crypto";
 
+export function hashToken(plain) {
+  return crypto.createHash("sha256").update(plain).digest("hex");
+}
+
 export function supabaseVerifier({ supabaseUrl, jwtSecret }) {
   const issuer = supabaseUrl.replace(/\/$/, "") + "/auth/v1";
   if (jwtSecret) {
@@ -62,5 +66,34 @@ export function createAuth({ verify, db, adminEmails = [] }) {
     });
   }
 
-  return { required, admin };
+  function importToken(scope) {
+    return async (req, res, next) => {
+      const plain = (req.get("X-Import-Token") || "").trim();
+      if (!plain) return res.status(401).json({ error: "missing import token" });
+      const token = await db.getApiTokenByHash(hashToken(plain));
+      if (!token || token.revoked_at || token.scope !== scope) {
+        return res.status(401).json({ error: "invalid import token" });
+      }
+      const user = await db.getUser(token.user_id);
+      if (!user) return res.status(401).json({ error: "invalid import token" });
+      req.user = {
+        id: user.id,
+        email: user.email,
+        isAdmin: admins.has(user.email.toLowerCase()),
+        viaToken: true,
+      };
+      await db.touchApiToken(token.id);
+      next();
+    };
+  }
+
+  function jwtOrToken(scope) {
+    const withImportToken = importToken(scope);
+    return (req, res, next) => {
+      if (req.get("X-Import-Token")) return withImportToken(req, res, next);
+      return required(req, res, next);
+    };
+  }
+
+  return { required, admin, importToken, jwtOrToken };
 }
