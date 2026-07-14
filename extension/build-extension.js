@@ -11,6 +11,21 @@ const dist = path.join(here, "dist");
 const manifest = JSON.parse(await readFile(path.join(here, "manifest.json"), "utf8"));
 const zipPath = path.join(here, `watch-later-librarian-sync-${manifest.version}.zip`);
 
+// externally_connectable ships to real users. localhost must NEVER be in the
+// store build, or any page on the user's machine could message the extension and
+// hijack a sync (set its own token, exfiltrate the Watch Later). It is injected
+// only for opt-in local development (build:extension -- --dev, or WLL_DEV=1), and
+// a dev build never produces the store zip.
+const devBuild = process.argv.includes("--dev") || process.env.WLL_DEV === "1";
+const distManifest = devBuild
+  ? {
+      ...manifest,
+      externally_connectable: {
+        matches: [...manifest.externally_connectable.matches, "http://localhost/*"],
+      },
+    }
+  : manifest;
+
 function crc32(buffer) {
   let crc = 0xffffffff;
   for (const byte of buffer) {
@@ -115,14 +130,18 @@ for (const name of ["collector-driver.main", "relay", "popup"]) {
 }
 
 await Promise.all([
-  copyFile(path.join(here, "manifest.json"), path.join(dist, "manifest.json")),
+  writeFile(path.join(dist, "manifest.json"), JSON.stringify(distManifest, null, 2)),
   copyFile(path.join(here, "popup.html"), path.join(dist, "popup.html")),
   ...[16, 48, 128].map((size) => writeFile(path.join(dist, "icons", `${size}.png`), iconPng(size))),
 ]);
 
 await rm(zipPath, { force: true });
-execFileSync("/usr/bin/zip", ["-qr", zipPath, "."], { cwd: dist });
-
-console.log(`extension bundled -> ${path.relative(process.cwd(), dist)}`);
-console.log(`store zip -> ${path.relative(process.cwd(), zipPath)}`);
+if (devBuild) {
+  console.log(`extension bundled (DEV: localhost enabled, do not ship) -> ${path.relative(process.cwd(), dist)}`);
+  console.log("store zip skipped (never zip a dev build)");
+} else {
+  execFileSync("/usr/bin/zip", ["-qr", zipPath, "."], { cwd: dist });
+  console.log(`extension bundled -> ${path.relative(process.cwd(), dist)}`);
+  console.log(`store zip -> ${path.relative(process.cwd(), zipPath)}`);
+}
 console.log(`extension ID -> ${extensionId(manifest.key)}`);
