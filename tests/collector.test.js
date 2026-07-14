@@ -5,6 +5,7 @@ import {
   extractLockupData,
   EXTRACTORS,
   parseInitialData,
+  readInitialContinuationToken,
   readPlaylistTotal,
   collectInitial,
   createCollector,
@@ -199,6 +200,32 @@ describe("collector v2 data shapes", () => {
     expect(readPlaylistTotal(win)).toBe(2796);
     expect(readPlaylistTotal({})).toBeNull();
   });
+
+  it("reads the initial continuation token and returns null for a single page", () => {
+    const paginated = {
+      ytInitialData: {
+        contents: [{
+          continuationItemRenderer: {
+            continuationEndpoint: {
+              continuationCommand: { token: "initial-next-page" },
+            },
+          },
+        }],
+      },
+    };
+    const singlePage = {
+      ytInitialData: {
+        unrelatedContinuation: {
+          continuationCommand: { token: "not-playlist-pagination" },
+        },
+        contents: [{ playlistVideoRenderer: vid("only-video", 1) }],
+      },
+    };
+
+    expect(readInitialContinuationToken(paginated)).toBe("initial-next-page");
+    expect(readInitialContinuationToken(singlePage)).toBeNull();
+    expect(readInitialContinuationToken({})).toBeNull();
+  });
 });
 
 // Fake page: batches of videos "load" on each scroll, like YouTube's
@@ -276,6 +303,38 @@ describe("createCollector", () => {
     await collector.collectAll({ onProgress: (p) => seen.push(p.count) });
     expect(seen.length).toBeGreaterThan(0);
     expect(seen[seen.length - 1]).toBe(2);
+  });
+
+  it("uses supplemental growth to keep a lockup collection alive", async () => {
+    const supplemental = [];
+    let next = 1;
+    const doc = {
+      documentElement: { scrollHeight: 10000 },
+      querySelectorAll() { return []; },
+    };
+    const win = {
+      scrollTo() {
+        if (next <= 6) supplemental.push(extractVideoData(vid(`supplemental-${next}`, next++)));
+      },
+    };
+    const collector = createCollector({
+      doc,
+      win,
+      sleep: async () => {},
+      scrollDelayMs: 0,
+      stallDelayMs: 0,
+      getSupplementalVideos: () => supplemental,
+    });
+
+    const { videos } = await collector.collectAll();
+    expect(videos.map((video) => video.id)).toEqual([
+      "supplemental-1",
+      "supplemental-2",
+      "supplemental-3",
+      "supplemental-4",
+      "supplemental-5",
+      "supplemental-6",
+    ]);
   });
 });
 

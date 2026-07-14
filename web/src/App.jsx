@@ -11,8 +11,17 @@ import JobProgress from "./components/JobProgress.jsx";
 import UpgradeBand from "./components/UpgradeBand.jsx";
 import Settings from "./components/Settings.jsx";
 import {
+  availabilitySummary,
+  createExtensionClient,
+  isChromiumBrowser,
+  WLL_SYNC_DONE,
+  WLL_SYNC_ERROR,
+  WLL_SYNC_PHASE,
+  WLL_SYNC_PROGRESS,
+} from "./extension.js";
+import {
   LearnIcon, EyeIcon, MusicIcon, GamepadIcon, ArchiveIcon, BoardIcon,
-  HistoryIcon, SettingsIcon, UploadIcon, GoogleIcon,
+  HistoryIcon, SettingsIcon, UploadIcon, GoogleIcon, SyncIcon,
 } from "./components/icons.jsx";
 
 const ROWS = [
@@ -76,8 +85,19 @@ export default function App() {
   const [duration, setDuration] = useState(null);
   const [sort, setSort] = useState("added-new");
   const [toast, setToast] = useState(null);
+  const [extensionClient] = useState(() => createExtensionClient());
+  const [isChromium] = useState(() => isChromiumBrowser());
+  const [extensionState, setExtensionState] = useState({
+    checking: true,
+    present: false,
+    version: null,
+    status: null,
+    progress: null,
+  });
+  const [extensionBusy, setExtensionBusy] = useState(false);
   const pollRef = useRef(null);
   const toastRef = useRef(null);
+  const meEmail = me?.email || "";
 
   const showToast = useCallback((msg) => {
     setToast(msg);
@@ -92,6 +112,28 @@ export default function App() {
     setJob(j.job);
     return { m, b, j: j.job };
   }, []);
+
+  const onImported = useCallback(async (result) => {
+    if (result.skipped) {
+      showToast(result.reason === "SORT_RUNNING"
+        ? "Sync skipped. A sort is already running."
+        : "Sync skipped. Try again after the import limit resets.");
+      setView("board");
+      await reload();
+      return;
+    }
+    const added = Number(result.added) || 0;
+    const willClassify = Number(result.willClassify) || 0;
+    const locked = Number(result.locked) || 0;
+    const bits = [`${added.toLocaleString()} new videos imported`];
+    if (willClassify) bits.push(`sorting ${willClassify.toLocaleString()} now`);
+    if (locked) bits.push(`${locked.toLocaleString()} waiting behind Pro`);
+    const availability = availabilitySummary(result);
+    if (availability) bits.push(availability);
+    showToast(bits.join(" · "));
+    setView("board");
+    await reload();
+  }, [reload, showToast]);
 
   // session
   useEffect(() => {
@@ -142,6 +184,181 @@ export default function App() {
     return () => clearInterval(pollRef.current);
   }, [job?.id, job?.state, reload, showToast]);
 
+  // Detect one configured extension ID and keep one external Port subscription.
+  useEffect(() => {
+    if (!meEmail) return;
+    let active = true;
+    let port = null;
+    let reconnectTimer = null;
+
+    const payloadOf = (message) => message?.payload || message || {};
+    const onPortMessage = (message) => {
+      if (!active) return;
+      const payload = payloadOf(message);
+      if (message?.type === WLL_SYNC_PHASE) {
+        setExtensionState((current) => ({
+          ...current,
+          status: { ...current.status, syncing: true },
+          progress: {
+            phase: payload.phase,
+            count: current.progress?.count || 0,
+            expectedTotal: current.progress?.expectedTotal || null,
+          },
+        }));
+        return;
+      }
+      if (message?.type === WLL_SYNC_PROGRESS) {
+        setExtensionState((current) => ({
+          ...current,
+          status: { ...current.status, syncing: true },
+          progress: {
+            phase: "collecting",
+            count: Number(payload.count) || 0,
+            expectedTotal: Number(payload.expectedTotal) || null,
+          },
+        }));
+        return;
+      }
+      if (message?.type === WLL_SYNC_DONE) {
+        setExtensionState((current) => ({
+          ...current,
+          status: {
+            ...current.status,
+            syncing: false,
+            lastSyncAt: new Date().toISOString(),
+            lastResult: payload,
+          },
+          progress: null,
+        }));
+        void onImported(payload);
+        return;
+      }
+      if (message?.type === WLL_SYNC_ERROR) {
+        setExtensionState((current) => ({
+          ...current,
+          status: {
+            ...current.status,
+            connected: payload.code === "TOKEN_REJECTED" ? false : current.status?.connected,
+            syncing: false,
+            lastResult: payload,
+          },
+          progress: null,
+        }));
+        const fallback = payload.code === "SIGNED_OUT"
+          ? "Sign in to YouTube, then try Sync again."
+          : payload.code === "TOKEN_REJECTED"
+            ? "Connect the extension again."
+            : "The extension could not finish the sync. Try again.";
+        showToast(payload.error || fallback);
+      }
+    };
+
+    const connectPort = () => {
+      if (!active || !extensionClient.extensionId) return;
+      try {
+        port = extensionClient.connectPort();
+        port.onMessage.addListener(onPortMessage);
+        port.onDisconnect.addListener(() => {
+          port = null;
+          if (active) reconnectTimer = setTimeout(connectPort, 1200);
+        });
+      } catch {
+        if (active) reconnectTimer = setTimeout(connectPort, 1200);
+      }
+    };
+
+    const detect = async () => {
+      setExtensionState((current) => ({ ...current, checking: true }));
+      const found = await extensionClient.detect();
+      if (!active) return;
+      if (!found.present) {
+        setExtensionState({ checking: false, present: false, version: null, status: null, progress: null });
+        return;
+      }
+      try {
+        const status = await extensionClient.getStatus();
+        if (!active) return;
+        setExtensionState({
+          checking: false,
+          present: true,
+          version: found.version,
+          status,
+          progress: status.syncing ? { phase: "opening", count: 0, expectedTotal: null } : null,
+        });
+        connectPort();
+        // Reconcile a job that may have started after the first page load but
+        // before this Port attached. This reuses the existing job state and
+        // polling path rather than introducing a second progress loop.
+        void reload().catch(() => {});
+      } catch {
+        if (!active) return;
+        setExtensionState({ checking: false, present: true, version: found.version, status: null, progress: null });
+        connectPort();
+      }
+    };
+
+    void detect();
+    return () => {
+      active = false;
+      clearTimeout(reconnectTimer);
+      try { port?.disconnect(); } catch { /* The extension may already be gone. */ }
+    };
+  }, [extensionClient, meEmail, onImported, reload, showToast]);
+
+  const connectExtension = useCallback(async () => {
+    if (!meEmail) return null;
+    setExtensionBusy(true);
+    let created = null;
+    let handedOff = false;
+    try {
+      created = await api.createToken({ scope: "imports", label: "Chrome extension" });
+      const response = await extensionClient.setToken({
+        token: created.token,
+        apiUrl: location.origin,
+        email: meEmail,
+      });
+      if (!response?.ok) throw new Error(response?.error || "The extension could not connect.");
+      handedOff = true;
+      const status = await extensionClient.getStatus().catch(() => ({
+        connected: true,
+        email: meEmail,
+        lastSyncAt: null,
+        lastResult: null,
+        syncing: false,
+        autoSync: false,
+      }));
+      setExtensionState((current) => ({ ...current, present: true, status }));
+      showToast("Extension connected.");
+      return created;
+    } catch (error) {
+      if (created && !handedOff) await api.revokeToken(created.id).catch(() => {});
+      showToast(error.message || "The extension could not connect.");
+      return null;
+    } finally {
+      setExtensionBusy(false);
+    }
+  }, [extensionClient, meEmail, showToast]);
+
+  const syncExtension = useCallback(async () => {
+    setExtensionState((current) => ({
+      ...current,
+      status: { ...current.status, syncing: true },
+      progress: { phase: "opening", count: 0, expectedTotal: null },
+    }));
+    try {
+      const response = await extensionClient.sync("delta");
+      if (response?.started === false && !response.error) return;
+      if (!response?.started) throw new Error(response?.error || "The extension could not start the sync.");
+    } catch (error) {
+      setExtensionState((current) => ({
+        ...current,
+        status: { ...current.status, syncing: false },
+        progress: null,
+      }));
+      showToast(error.message || "The extension could not start the sync.");
+    }
+  }, [extensionClient, showToast]);
+
   if (authed === null) return <div className="loading">loading…</div>;
   if (!authed) return <AuthGate />;
   if (!me || !board) return <div className="loading">loading…</div>;
@@ -149,6 +366,19 @@ export default function App() {
   const totalVideos = Object.values(me.counts).reduce((a, b) => a + b, 0);
   const needsQuiz = !me.hasTaste && totalVideos === 0;
   const lockedCount = ACTIVE_STATES.has(job?.state) ? 0 : me.counts.unscanned;
+  const connectedEmail = extensionState.status?.email?.trim().toLowerCase() || "";
+  const accountEmail = me.email.trim().toLowerCase();
+  const extensionMismatch = Boolean(connectedEmail && connectedEmail !== accountEmail);
+  const extension = {
+    checking: extensionState.checking,
+    present: extensionState.present,
+    connected: Boolean(extensionState.status?.connected),
+    mismatch: extensionMismatch,
+    accountEmail: me.email,
+    isChromium,
+  };
+  const extensionConnected = extension.present && extension.connected && !extension.mismatch;
+  const extensionSyncing = Boolean(extensionState.status?.syncing || extensionState.progress);
 
   const matches = (list) => {
     let out = list;
@@ -183,15 +413,6 @@ export default function App() {
   };
   const dismiss = async (id) => { await api.dismissVideo(id); reload(); };
   const done = async (id) => { await api.markDone([id]); showToast("Marked done. It's on your cleanup checklist"); reload(); };
-
-  const onImported = async (result) => {
-    const bits = [`${result.added.toLocaleString()} new videos imported`];
-    if (result.willClassify) bits.push(`sorting ${result.willClassify.toLocaleString()} now`);
-    if (result.locked) bits.push(`${result.locked.toLocaleString()} waiting behind Pro`);
-    showToast(bits.join(" · "));
-    setView("board");
-    await reload();
-  };
 
   const chipsBar = (
     <div className="filters">
@@ -239,6 +460,11 @@ export default function App() {
             {me.counts.scanned.toLocaleString()} sorted · {me.counts.unscanned.toLocaleString()} waiting
           </span>
         )}
+        {extensionConnected ? (
+          <button className="btn btn--ghost" disabled={extensionSyncing} onClick={syncExtension}>
+            <SyncIcon size={15} /> {extensionSyncing ? "Syncing…" : "Sync"}
+          </button>
+        ) : null}
         <button className="btn btn--primary" onClick={() => setView("import")}>
           <UploadIcon size={15} /> Import
         </button>
@@ -251,9 +477,9 @@ export default function App() {
         </button>
       </header>
 
-      {job && ACTIVE_STATES.has(job.state) && (
-        <JobProgress job={job} onCancelled={reload} />
-      )}
+      {extensionState.progress || (job && ACTIVE_STATES.has(job.state)) ? (
+        <JobProgress job={job} collection={extensionState.progress} onCancelled={reload} />
+      ) : null}
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
 
       <main>
@@ -261,11 +487,14 @@ export default function App() {
           <Onboarding onDone={() => reload().then(() => setView("import"))} />
         ) : view === "settings" ? (
           <Settings me={me} onBack={() => setView("board")} onToast={showToast}
-            onRetakeQuiz={() => { api.saveTaste({ interests: [], note: "" }); setView("quiz"); }} />
+            onRetakeQuiz={() => { api.saveTaste({ interests: [], note: "" }); setView("quiz"); }}
+            extension={extension} onConnectExtension={connectExtension}
+            extensionBusy={extensionBusy} />
         ) : view === "quiz" ? (
           <Onboarding onDone={() => reload().then(() => setView("board"))} />
         ) : view === "import" ? (
-          <ImportPanel onImported={onImported} />
+          <ImportPanel onImported={onImported} extension={extension}
+            onConnectExtension={connectExtension} extensionBusy={extensionBusy} />
         ) : view === "cleanup" ? (
           <CleanupChecklist />
         ) : ROWS.some((r) => r.key === view) ? (

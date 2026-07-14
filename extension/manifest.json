@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Watch Later Librarian Sync",
+  "version": "0.1.0",
+  "description": "One click sync of your own YouTube Watch Later into Watch Later Librarian.",
+  "permissions": ["scripting", "storage", "alarms"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html" },
+  "externally_connectable": {
+    "matches": [
+      "https://watch-later-web.vercel.app/*",
+      "http://localhost/*"
+    ]
+  },
+  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxvbWWv/q6ah0iVe3Dc1f+fqa2/xzjDc3a/qCRUqUZbjxWkVKgCt6+vo29DC6w66znE1fRw7Pjpj1htbp+V0VNnDgVsmCSGaF8iJTtWYgEUv8oe8qsFz0wQdp+H5a5dohLJy0TLpHLREk+/rEknwzDCzg0ppJZB98TmpMZIvMIhNqixlRxQsI9X5q7067o7rjYk+C9P80QP8JtN45nGZ/dJyy6Xic/1+12Nl0hjwZSrQi8bJIMuci3MOXSqWKij29l6fllMwTOjYPvct8Huh8HQVFhsThwQvjuOwnmGlDZWGez878BZ1btek1k+d9YuX9Be+Wfcz0+OnsAloTkp7BzwIDAQAB"
+}

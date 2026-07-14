@@ -1,6 +1,9 @@
 node_modules/
 web/dist/
 collector/dist/
+extension/dist/
+extension/*.zip
+extension/dev-key.pem
 .env
 .env.*
 !.env.example
@@ -10,3 +13,9 @@ spike/private/
 .gstack/
 dev-pgdata/
 .vercel
+
+# extension signing key + build artifacts
+extension/*.pem
+extension/key.pem
+extension/dist/
+extension/*.zip

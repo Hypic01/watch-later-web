@@ -125,7 +125,7 @@ function selectedNodes(doc) {
   return { nodes: [], extract: null };
 }
 
-export function parseInitialData(win) {
+export function parseInitialData(win, { fallbackLockupPosition = true } = {}) {
   const videos = new Map();
   const visited = new WeakSet();
 
@@ -144,7 +144,9 @@ export function parseInitialData(win) {
       return;
     }
     if (value.playlistVideoRenderer) add(extractVideoData(value.playlistVideoRenderer));
-    if (value.lockupViewModel) add(extractLockupData(value.lockupViewModel), true);
+    if (value.lockupViewModel) {
+      add(extractLockupData(value.lockupViewModel), fallbackLockupPosition);
+    }
     for (const [key, child] of Object.entries(value)) {
       if (key !== "playlistVideoRenderer" && key !== "lockupViewModel") walk(child);
     }
@@ -152,6 +154,46 @@ export function parseInitialData(win) {
 
   walk(win?.ytInitialData);
   return Array.from(videos.values());
+}
+
+export function readInitialContinuationToken(win) {
+  let token = null;
+  const visited = new WeakSet();
+
+  const tokenInside = (value, seen = new WeakSet()) => {
+    if (!value || typeof value !== "object" || seen.has(value)) return null;
+    seen.add(value);
+    const candidates = [
+      value.continuationCommand?.token,
+      value.nextContinuationData?.continuation,
+      value.reloadContinuationData?.continuation,
+      value.continuationData?.continuation,
+    ];
+    const found = candidates.find((candidate) => typeof candidate === "string" && candidate);
+    if (found) return found;
+    for (const child of Array.isArray(value) ? value : Object.values(value)) {
+      const nested = tokenInside(child, seen);
+      if (nested) return nested;
+    }
+    return null;
+  };
+
+  const walk = (value) => {
+    if (token !== null || !value || typeof value !== "object" || visited.has(value)) return;
+    visited.add(value);
+    if (value.continuationItemRenderer) {
+      token = tokenInside(value.continuationItemRenderer);
+      if (token !== null) return;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) walk(item);
+      return;
+    }
+    for (const child of Object.values(value)) walk(child);
+  };
+
+  walk(win?.ytInitialData);
+  return token;
 }
 
 function textValue(value) {
@@ -215,7 +257,16 @@ export function collectInitial({ doc, win }) {
 }
 
 // Scroll/harvest/prune loop. Everything injected for tests.
-export function createCollector({ doc, win, sleep, scrollDelayMs = 1600, stallDelayMs = 1400, maxRounds = 150, keepNodes = 12 }) {
+export function createCollector({
+  doc,
+  win,
+  sleep,
+  scrollDelayMs = 1600,
+  stallDelayMs = 1400,
+  maxRounds = 150,
+  keepNodes = 12,
+  getSupplementalVideos = () => [],
+}) {
   const nodes = () => selectedNodes(doc);
 
   async function collectAll({ onProgress } = {}) {
@@ -225,6 +276,9 @@ export function createCollector({ doc, win, sleep, scrollDelayMs = 1600, stallDe
       for (const n of selected.nodes) {
         const v = selected.extract(n.data);
         if (v && !seen.has(v.id)) seen.set(v.id, v);
+      }
+      for (const v of getSupplementalVideos() || []) {
+        if (v?.id && !seen.has(v.id)) seen.set(v.id, v);
       }
     };
     const prune = () => {

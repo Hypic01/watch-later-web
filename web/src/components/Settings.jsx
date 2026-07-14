@@ -2,11 +2,20 @@ import React, { useEffect, useState } from "react";
 import * as api from "../api.js";
 import { signOut } from "../auth.js";
 import { ArrowLeftIcon, LogOutIcon } from "./icons.jsx";
+import ExtensionConnection from "./ExtensionConnection.jsx";
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const formatDate = (value) => DATE_FORMAT.format(new Date(value));
 
-export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
+export default function Settings({
+  me,
+  onBack,
+  onToast,
+  onRetakeQuiz,
+  extension,
+  onConnectExtension,
+  extensionBusy,
+}) {
   const [busy, setBusy] = useState(false);
   const [tokens, setTokens] = useState([]);
   const [tokensLoading, setTokensLoading] = useState(true);
@@ -80,6 +89,13 @@ export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
     }
   };
 
+  const connectExtension = async () => {
+    const created = await onConnectExtension();
+    if (!created) return;
+    const { token: _token, ...metadata } = created;
+    setTokens((current) => [metadata, ...current.filter((item) => item.id !== metadata.id)]);
+  };
+
   return (
     <div className="settings">
       <div className="catview__header">
@@ -138,6 +154,9 @@ export default function Settings({ me, onBack, onToast, onRetakeQuiz }) {
             </button>
           ) : null}
         </div>
+
+        <ExtensionConnection extension={extension} onConnect={connectExtension}
+          busy={extensionBusy} surface="settings" />
 
         {generatedToken ? (
           <div className="settings__token-reveal">

@@ -1,8 +1,14 @@
 import React, { useRef, useState } from "react";
 import * as api from "../api.js";
 import { CopyIcon, ExternalIcon, UploadIcon, CheckIcon } from "./icons.jsx";
+import ExtensionConnection from "./ExtensionConnection.jsx";
 
-export default function ImportPanel({ onImported }) {
+export default function ImportPanel({
+  onImported,
+  extension,
+  onConnectExtension,
+  extensionBusy,
+}) {
   const [pasted, setPasted] = useState("");
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -60,6 +66,8 @@ export default function ImportPanel({ onImported }) {
         YouTube doesn't let any app read your Watch Later directly, so you export it
         yourself, in your own browser, in about a minute. Nothing to install.
       </p>
+      <ExtensionConnection extension={extension} onConnect={onConnectExtension}
+        busy={extensionBusy} surface="import" />
       <div className="importer__steps">
         <div className="istep">
           <div className="istep__body">

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Watch Later Librarian Sync</title>
+    <style>
+      :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      * { box-sizing: border-box; }
+      body { width: 320px; margin: 0; padding: 18px; background: #0f172a; color: #f8fafc; }
+      header { display: flex; align-items: center; gap: 10px; }
+      .mark { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: #ec4899; }
+      h1 { margin: 0; font-size: 15px; letter-spacing: -.01em; }
+      .email { min-height: 18px; margin: 16px 0 3px; color: #f9a8d4; font-size: 12px; }
+      .status { min-height: 42px; margin: 0; color: #cbd5e1; font-size: 13px; line-height: 1.45; }
+      .actions { display: grid; gap: 8px; margin-top: 14px; }
+      button, a { font: inherit; }
+      button { border: 0; border-radius: 999px; padding: 10px 14px; color: #fff; font-weight: 650; cursor: pointer; }
+      button:disabled { opacity: .45; cursor: default; }
+      .primary { background: #db2777; }
+      .secondary { background: #273549; border: 1px solid rgba(255,255,255,.12); }
+      .foot { display: inline-block; margin-top: 15px; color: #94a3b8; font-size: 12px; text-decoration: none; }
+      .foot:hover { color: #f8fafc; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <span class="mark" aria-hidden="true">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.3" stroke-linecap="round">
+          <path d="M4 6h16M4 12h16M4 18h10" />
+        </svg>
+      </span>
+      <h1>Watch Later Librarian</h1>
+    </header>
+    <p class="email" data-email></p>
+    <p class="status" data-status>Reading extension status.</p>
+    <div class="actions">
+      <button class="primary" type="button" data-sync-delta>Sync new videos</button>
+      <button class="secondary" type="button" data-sync-full>Run a full sync</button>
+    </div>
+    <a class="foot" data-open-app href="https://watch-later-web.vercel.app/app">Open Watch Later Librarian</a>
+    <script src="popup.js"></script>
+  </body>
+</html>
