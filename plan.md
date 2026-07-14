@@ -1,0 +1,415 @@
+# plan.md — Watch Later Librarian v2: Extension-First Sync + Feature Parity
+
+**Handoff contract.** Author: Fable (product/architecture, with Joon). Implementer: Sol.
+Reviewer: Fable. Execute one milestone at a time, stop, report; do not batch milestones.
+This file is the single source of truth. If reality contradicts it, stop and say so rather
+than improvising around it.
+
+---
+
+## 0. Read this first (hard-won facts — do NOT rediscover these, they cost a full day)
+
+1. **YouTube killed server-side Watch Later access on 2026-07-12.** yt-dlp 404s on WL/LL.
+   A cookie-authenticated headless Chromium reports `LOGGED_IN=true` and still gets "No
+   videos in this playlist yet." Root cause is PO Token / BotGuard attestation: cookies alone
+   no longer grant personal-feed content. **Do not attempt any server-side, headless, or
+   cookie-replay fetch of Watch Later. It is a dead end. It is why this whole plan exists.**
+2. **Polymer `.data` is a MAIN-world property.** Chrome content scripts run in an ISOLATED
+   world where it is invisible. The extension **must** inject the collector with
+   `world: "MAIN"` via `chrome.scripting.executeScript` and relay results out via
+   `window.postMessage` → an isolated-world relay. A plain content script silently harvests
+   **zero videos** and looks like it works.
+3. **Watch Later is newest-first and `ytInitialData` server-renders the first ~100 items.**
+   So the routine "find my new videos" sync needs **no scrolling at all**: parse
+   `ytInitialData`, harvest once, done in ~2s. Only first-import/full-sync scrolls. This is
+   what makes silent background sync viable.
+4. **Full sync must use a VISIBLE tab.** Playlist continuation loading is visibility-driven;
+   a hidden tab may never grow the list. Do not fight the throttler.
+5. **Vercel serverless request bodies cap at 4.5MB** (the Express limit of 12MB is a lie in
+   prod). Chunk the migration below 3.5MB.
+6. **Public single-video caption fetch still works** from a real browser session. Only
+   personal feeds were locked down. Server-side caption fetch from Vercel is best-effort and
+   mostly fails (datacenter IP) — treat as a degraded fallback, never the primary path.
+7. **Repo conventions you must follow:** every module is a `createX({deps})` factory with
+   dependency injection; tests are vitest with fakes injected (PGlite for DB, `supertest` for
+   routes, fake `chrome` APIs for the extension). 84 tests currently pass; keep them passing.
+   `FAKE_LLM=1` + `DEV_FAKE_AUTH=1` must keep running the whole product with zero keys.
+8. **Never break the console snippet.** `collector/collector.js` is served at
+   `GET /collector.js` and is the zero-install onboarding path + non-Chrome fallback. It also
+   gets bundled into the extension at build time (MV3 forbids remote code). Changes must be
+   backward-compatible.
+
+Repos: hosted `~/Projects/watch-later-web` (live at watch-later-web.vercel.app; Vercel
+serverless; there is **no interval worker in prod** — jobs advance via leased,
+budget-bounded bites piggybacked on the client's 3s `GET /api/jobs/current` poll, see
+`server/worker.js`). Archived reference only, do not deploy: `~/Projects/watch-later-librarian`
+(`VideoDetail.jsx`, `mentor.js`, `LearnView.jsx`, `beats.jsx`, `ingestQueue.js`, `library.db`).
+
+---
+
+## 1. Why (context, so you make good judgment calls)
+
+The product sorts a user's YouTube Watch Later backlog into 5 rows (learn / watch / music /
+entertainment / outdated) with claude-haiku-4-5. Freemium: first 100 videos free, $5/mo Pro up
+to 10,000. It is live and working.
+
+YouTube's 07-12 lockdown means the user's own real browser is now the **only** viable data
+plane. That converts the Chrome extension from a nice-to-have into the core architecture, and
+it is also our moat: anyone can paste a script once, but a reviewed extension that keeps a
+library silently in sync is a real product with real switching cost.
+
+Locked product decisions (do not relitigate):
+- Extension is core. **Auto-sync ON by default, daily** (popup control: 6h / daily / off).
+- Feature parity with the owner's beloved personal app, tier-gated: in-app **VideoDetail**;
+  **TL;DR** (free taste of 7, then Pro); **Learn** mentor (Pro, but **visible-and-locked from
+  day one** so free users know what they would be buying); **bulk-remove from real WL** later
+  as **Pro**.
+- Owner parity: one-time migration of his `library.db` into his hosted admin account; a local
+  vault-ingest bridge that reuses the archived app's `ingestQueue` + `claude` CLI.
+- Paste-collector stays forever as onboarding + fallback.
+
+---
+
+## 2. Milestones (execute in order; stop after each for review)
+
+| M | Goal | Blocked by |
+|---|---|---|
+| M1 | API tokens + CORS + collector core v2 | nothing — **start here** |
+| M2 | Extension MVP + site integration (Sync button, connect, live progress) | M1 |
+| M3 | Auto-sync (alarms) + edge cases + Web Store submission | M2 |
+| M4 | Transcript pipeline + VideoDetail + TL;DR + Learn-locked upsell | M2 |
+| M5 | Owner library migration | M4 schema |
+| M6 | Learn mentor real port (Pro) | M4, M5 |
+| M7 | Vault-ingest bridge | M5 |
+
+(Joon runs a manual check of the live collector against post-07-12 YouTube in parallel; its
+result only tells us which DOM extractor is live, and M1's extractor registry handles either.
+Do not block on it.)
+
+---
+
+## M1 — Tokens, CORS, collector v2
+
+**Migration `003-api-tokens`** in `server/migrations.js`:
+```sql
+CREATE TABLE api_tokens (
+  id bigserial PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash text NOT NULL UNIQUE,     -- sha256 hex. Plaintext is "wll_" + 32 random bytes
+                                       -- base64url, returned exactly once, never stored.
+  scope text NOT NULL CHECK (scope IN ('imports','bridge')),
+  label text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz,
+  revoked_at timestamptz
+);
+```
+
+**`server/auth.js`**: add `hashToken(plain)` (node:crypto sha256 hex) and an
+`importToken(scope)` middleware factory: read `X-Import-Token` → hash → look up → reject if
+missing/revoked/wrong-scope → load user → set `req.user = {id, email, isAdmin, viaToken:true}`
+→ touch `last_used_at` (throttle to once per 5 min). Export `jwtOrToken(scope)` that accepts
+either a Supabase JWT or a token. Mount `jwtOrToken("imports")` **only** on
+`POST /api/imports`. `bridge` scope is mintable by admins only (enforce server-side). A token
+can **never** mint another token: `POST /api/tokens` is JWT-only.
+
+**Routes** in `server/app.js`: `POST /api/tokens` (JWT; body `{scope, label}`; returns the
+plaintext once), `GET /api/tokens` (list, no secrets), `DELETE /api/tokens/:id` (revoke).
+`server/db.js` gains: `createApiToken`, `getApiTokenByHash`, `listApiTokens`,
+`revokeApiToken`, `touchApiToken`.
+
+**CORS** (Express middleware, before routes; no `vercel.json` change needed — rewrites already
+forward OPTIONS): new env `EXTENSION_IDS` (comma list, so the unpacked dev ID and the store ID
+both work) → `config.extensionOrigins` = `chrome-extension://<id>` list. If `Origin` matches
+one exactly: echo that exact origin (**never `*`**), `Vary: Origin`, allow headers
+`content-type, x-import-token`, methods `POST, OPTIONS`, answer OPTIONS with 204. Applies to
+`/api/imports` only.
+
+**`collector/collector.js` v2** — must stay backward compatible with the served snippet:
+- Replace the hardcoded selector with an extractor registry so a YouTube redesign is a
+  one-line fix:
+  `EXTRACTORS = [{selector:"ytd-playlist-video-renderer", extract: extractVideoData},
+  {selector:"yt-lockup-view-model", extract: extractLockupData}]`. `nodes()` scans the
+  registry and uses the first selector that returns anything.
+- New pure functions: `parseInitialData(win)` (walk `window.ytInitialData` for BOTH the
+  `playlistVideoRenderer` and `lockupViewModel` JSON shapes → normalized video objects),
+  `readPlaylistTotal(win)` (the playlist header's total, for honest progress and a
+  completeness cross-check), `collectInitial({doc, win})` (harvest with **no** scrolling).
+- Keep `isWatchLaterPage`, `extractVideoData`, `createCollector`, `buildPayload` exported and
+  behaviorally unchanged.
+
+**Settings UI** (`web/src/components/Settings.jsx`): a "Connected apps" block listing tokens
+(label, created, last used) with revoke buttons. Token creation is normally invisible (the
+site mints it for the extension in M2), but expose a manual "generate token" for the bridge.
+
+**Acceptance:** `tests/tokens.test.js` (supertest + PGlite): plaintext returned exactly once
+and never retrievable again; hash lookup authenticates; revoked token 401s; `bridge` scope
+refused to non-admins; a token cannot mint a token; CORS preflight echoes the exact extension
+origin and never `*`; a non-listed origin gets no CORS headers. Extend
+`tests/collector.test.js`: `parseInitialData` on both JSON shapes (build a synthetic
+`lockupViewModel` fixture), registry falls through when the old selector finds nothing,
+`collectInitial` does not scroll, `readPlaylistTotal`. All 84 existing tests still green.
+
+---
+
+## M2 — Extension MVP (MV3) + site integration
+
+**Create `extension/`:**
+```
+extension/
+├── manifest.json
+├── build-extension.js        # esbuild; mirror collector/build-snippet.js. Outputs dist/
+│                             # (loadable unpacked) and a store zip. Bundles collector core.
+├── popup.html
+└── src/
+    ├── background.js         # service worker shell: listeners registered TOP-LEVEL, delegates
+    ├── sync.js               # createSyncController({tabs, scripting, storage, api, now})
+    │                         # PURE + DI. All logic lives here so it is unit-testable.
+    ├── api.js                # POST /api/imports with X-Import-Token; error mapping
+    ├── messages.js           # ALL message-type constants (web/ imports this same file)
+    ├── collector-driver.main.js  # MAIN-world entry (see fact #2)
+    ├── relay.js              # ISOLATED world: window.postMessage <-> chrome.runtime
+    ├── transcript.js         # M4 (stub in M2)
+    └── popup.js              # vanilla JS, no React
+```
+
+**manifest.json** (minimal on purpose; every permission must survive review):
+```json
+{
+  "manifest_version": 3,
+  "name": "Watch Later Librarian Sync",
+  "version": "0.1.0",
+  "description": "One click sync of your own YouTube Watch Later into Watch Later Librarian.",
+  "permissions": ["scripting", "storage", "alarms"],
+  "host_permissions": ["https://www.youtube.com/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html" },
+  "externally_connectable": { "matches": ["https://watch-later-web.vercel.app/*"] },
+  "icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" }
+}
+```
+Do **not** add: `tabs` (host permission already grants URL access to youtube.com tabs),
+`cookies`, `identity`, `notifications`, `offscreen`, or any host permission for our own API
+(we do CORS instead — one fewer thing to justify). Pin a `"key"` in the dev manifest so the
+unpacked extension ID is stable across reloads.
+
+**Sync flow** (in `sync.js`, driven by background.js):
+1. Trigger: popup click, site message, or alarm. Single-flight guard in `chrome.storage.session`.
+2. `chrome.tabs.query({url: "https://www.youtube.com/playlist*"})` → reuse an open WL tab, else
+   `chrome.tabs.create({url: WL, active: mode === "full"})` (delta = background, full = visible;
+   see fact #4).
+3. On tab load: `chrome.scripting.executeScript` **twice** — `relay.js` (ISOLATED) and
+   `collector-driver.main.js` (**MAIN**, args `{mode}`).
+4. Driver: check sign-in via `window.ytcfg?.get("LOGGED_IN")` → if false emit
+   `COLLECT_ERROR {code:"SIGNED_OUT"}`. Then **delta** = `parseInitialData` + one harvest, no
+   scroll; **full** = existing `createCollector` loop + `readPlaylistTotal` for honest progress
+   ("2,724 of 2,796 — the rest are private or deleted").
+5. Driver emits `COLLECT_PROGRESS {count, expectedTotal}` / `COLLECT_DONE {videos, truncated}` /
+   `COLLECT_ERROR` via `window.postMessage` (envelope `{__wll:true}`); relay forwards to the SW.
+   These periodic events also keep the MV3 service worker alive; still persist enough state in
+   `storage.session` to recover if it is killed.
+6. SW: `buildPayload(videos, "extension")` → `POST /api/imports` with `X-Import-Token` → close
+   the tab **only if we created it** → badge (`setBadgeText` live count, `✓` on success, `!` on
+   error).
+
+**Site integration** — create `web/src/extension.js`; import message constants from
+`extension/src/messages.js` (one source of truth, so the protocol cannot drift):
+
+| Direction | Type | Payload → Reply |
+|---|---|---|
+| site → ext | `WLL_PING` | `{}` → `{ok, version}` (throws/absent ⇒ no extension) |
+| site → ext | `WLL_SET_TOKEN` | `{token, apiUrl, email}` → `{ok}` |
+| site → ext | `WLL_GET_STATUS` | `{}` → `{connected, email, lastSyncAt, lastResult, syncing, autoSync}` |
+| site → ext | `WLL_SYNC` | `{mode:"delta"\|"full"}` → `{started}` |
+| site → ext | `WLL_FETCH_TRANSCRIPT` | `{videoId}` → `{ok, transcript, ...}` (M4) |
+| ext → site (Port `wll-sync`) | `WLL_SYNC_PHASE` / `_PROGRESS` / `_DONE` / `_ERROR` | streamed |
+
+- Topbar gains a **Sync** button when the extension is connected (Import button stays).
+  Click → `WLL_SYNC {mode:"delta"}`. Render collection progress in the **existing**
+  `JobProgress` slot; on `WLL_SYNC_DONE` the existing 3s `/api/jobs/current` poll takes over
+  classification progress — **write no new progress code**.
+- Connect flow (one click, no copy-paste): if `WLL_PING` succeeds but status is unconnected,
+  Settings/ImportPanel shows "Connect the extension" → site calls
+  `POST /api/tokens {scope:"imports", label:"Chrome extension"}` → sends `WLL_SET_TOKEN`.
+- Guard: if `status.email !== me.email`, show "This extension is connected to a different
+  account" + reconnect.
+- No extension → **exactly today's behavior** (ImportPanel + console snippet), plus a card:
+  "Get the Chrome extension for one-click sync" (hide on non-Chromium user agents).
+
+**Acceptance:** `tests/extension-sync.test.js` drives `createSyncController` with fake
+`{tabs, scripting, storage, api}` exactly like `createCollector` is driven with fake pages
+today: reuse-vs-create tab, delta vs full mode, `SIGNED_OUT` propagation, single-flight
+(second trigger while syncing is a no-op), SW-restart recovery from `storage.session`, import
+409/429 treated as benign skips. Manual: Joon loads `extension/dist` unpacked and one-click
+syncs against prod — **this is the moment his daily driver becomes the hosted product, and it
+happens before any store review.**
+
+---
+
+## M3 — Auto-sync + Web Store
+
+`chrome.alarms.create("wll-auto-sync", {periodInMinutes: 1440})`, **default ON, daily**; popup
+select 6h / daily / off. Alarms never fire while Chrome is closed → on
+`chrome.runtime.onStartup`, if last sync is older than the interval, run a catch-up. Auto-sync
+is **always delta** and **never** opens a visible tab. Treat import 409 ("a sort is already
+running") and 429 as benign skips, not errors.
+
+Store submission: single purpose = "sync your own YouTube Watch Later into your Watch Later
+Librarian library." Justify each permission with the sentences in M2. Privacy policy is already
+live at `/privacy.html` — add one line covering the extension (reads your Watch Later only when
+you sync; sends titles and metadata to your own account; token stored locally). All code is
+bundled, no remote code. **Exclude bulk-remove from this first submission** to keep a clean
+read-only story for review.
+
+---
+
+## M4 — Transcripts, VideoDetail, TL;DR, Learn-locked
+
+**Migration `004`:** `videos` gains `transcript text`, `transcript_available boolean NOT NULL
+DEFAULT false`, `transcript_source text`, `transcript_fetched_at timestamptz`,
+`upload_date text`, `description text`. **Keep `LIST_COLUMNS` transcript-free** (board payloads
+must never carry tens of MB — the archived app learned this the hard way). New table
+`summaries (user_id uuid, video_id text, summary jsonb NOT NULL, model text, input_tokens int,
+output_tokens int, created_at timestamptz DEFAULT now(), PRIMARY KEY (user_id, video_id),
+FOREIGN KEY (user_id, video_id) REFERENCES videos ON DELETE CASCADE)`. `users.summaries_used int
+NOT NULL DEFAULT 0` (mirror the existing `free_used` pattern). New env `FREE_SUMMARY_QUOTA=7`.
+
+**Transcript flow:** VideoDetail TL;DR click → if `!transcript_available` and the extension is
+present → `WLL_FETCH_TRANSCRIPT {videoId}` → extension SW does
+`fetch("https://www.youtube.com/watch?v=<id>", {credentials:"include"})` → regex out
+`ytInitialPlayerResponse` → `captions.playerCaptionsTracklistRenderer.captionTracks` → pick
+track (manual `en`/`ko` **before** ASR, mirroring the archived `--sub-langs en.*,ko.*`) → fetch
+`baseUrl + "&fmt=json3"` → parse → return to the **page** → page does
+`POST /api/videos/:id/transcript` with its own JWT (same-origin: no new CORS, no new token
+scope) → then `POST /api/videos/:id/summary`. If the watch-page HTML comes back as an
+attestation wall, fall back to opening a background tab and reading
+`window.ytInitialPlayerResponse` in MAIN world.
+
+New pure module **`collector/captions.js`** shared by extension and server:
+`extractPlayerResponse(html)`, `pickCaptionTrack(tracks, prefLangs)`, `parseJson3(raw)` —
+**port `parseJson3` verbatim from the archived `server/ytdlp.js`.**
+
+**Endpoints:** `POST /api/videos/:id/transcript` (JWT; ownership check; reject >1MB raw; store
+≤250K chars with a truncated flag; COALESCE-update optional `description` ≤5000 / `upload_date`
+/ `duration_seconds` / `channel` harvested from the same playerResponse — these feed the mentor
+and vault prompts). `POST /api/videos/:id/transcript/fetch` (JWT; server best-effort via a new
+`server/transcripts.js`, 8s timeout; expected to usually fail from Vercel — honest copy, house
+style, **no dashes**: "YouTube would not hand captions to our server. With the Chrome extension
+we fetch them straight from your browser instead."). `POST /api/videos/:id/summary` (JWT;
+return cache if present with `{cached:true}` and spend nothing; else require a transcript (400
+with a fetch hint); gate on Pro/admin OR `summaries_used < FREE_SUMMARY_QUOTA`; generate; cache;
+increment; 402 `{upgrade:true}` at the wall). `GET /api/videos/:id` (detail payload incl.
+`transcript_available`, `vault_note_path`, `description` — **never** the raw transcript).
+
+**`server/mentor.js` (new):** port the archived app's summary prompt shape
+(`{tldr, points[], watchIf}`) with a **generic, taste-profile-aware persona** (not "Joon"), via
+**structured outputs**, so the parser shrinks to a validator. `server/anthropic.js` gains
+`completeJson(prompt, schema, {model, maxTokens})` and `completeText(...)` plus fake-LLM
+equivalents (deterministic fake summary/lesson) so the whole feature runs under `FAKE_LLM=1`.
+`db.addUsage` must make `jobId` **optional** (skip the `classify_jobs` update when null) so
+summary/Learn spend still lands in user + global accounting under the same `BUDGET_USD` kill
+switch.
+
+**UI:** port `web/src/components/VideoDetail.jsx` from the archived app nearly verbatim (same
+CSS dialect; hero thumb with `maxresdefault→hqdefault` fallback, meta line, pills, reasoning
+block, actions row, summary blocks) adapted to the hosted five categories (`learn` not
+`ingest`). `VideoCard` thumb/title click opens the detail again (App.jsx focus state, no
+router); keep "Open on YouTube" as an overlay/menu action. TL;DR button is **always visible**
+with a free meter ("2 of 7 free summaries used") and an inline upgrade card at the wall. Learn
+button is **always visible with a lock** for free users → modal ("Learn is a Pro superpower.
+The librarian teaches you the video so you never have to watch it.") → existing checkout flow.
+
+**Acceptance:** `tests/captions.test.js` (extractPlayerResponse on a trimmed HTML fixture, track
+preference order, parseJson3 — port the archived cases). `tests/transcripts.test.js` (ownership,
+size caps, COALESCE metadata, honest fallback failure body). `tests/summaries.test.js` (cache
+hit spends nothing, meter boundary exactly at 7, 402 upsell, pro/admin bypass, fake-LLM
+determinism, usage recorded with a null jobId).
+
+---
+
+## M5 — Owner library migration (2,720 videos, 7 overrides, 2,129 transcripts / 54MB)
+
+Local script → admin bulk endpoint. **Do not** do direct SQL via MCP: 54MB of transcripts as
+SQL literals bypasses every sanitizer and cannot be tested.
+
+- Hosted: `POST /api/admin/migrate` (admin JWT or `bridge` token) body `{rows:[...]}` → upsert
+  `ON CONFLICT (user_id, video_id)` with COALESCE. `user_id` always comes from the
+  authenticated admin, **never** from the body.
+- Script: **`scripts/migrate-to-hosted.js` in the ARCHIVED repo** (it already has
+  better-sqlite3; the hosted repo must never grow a sqlite dependency). Read `library.db`
+  read-only, map, chunk each request **under 3.5MB** (fact #5), retry, print a reconciliation
+  table, safe to re-run.
+- Mappings: `category ingest → learn` (also inside `override_from`); `status ingested → done`
+  (carry `vault_note_path`); `scanned_at → classified_at`; topics old-15 → new-16
+  (`design|ai-tools|camera-photo → tech`, `career|finance → money & business`,
+  `dj-production → music`, `self-improvement → learning & how-to`,
+  `korean-life → vlogs & daily life`, `relationships → other`, rest 1:1), dedupe, cap 2.
+  **`override_seq` must be assigned server-side via `nextval('override_seq')` in ascending
+  `override_at` order** so the taste flywheel (`getRecentOverrides`) preserves his 7
+  corrections in true chronological order. Transcripts ride along with
+  `transcript_source='migration'` — **this is what unlocks his TL;DR and Learn on day one.**
+  Skip the archived `learn_sessions` and `summaries` (stale; regenerating costs pennies).
+- Idempotent: re-running never downgrades `done`/`dismissed` and never stomps a row with
+  `manual_override = true`.
+- **Run the migration BEFORE his first full extension sync**, so the sync only refreshes
+  playlist positions and re-classification spend is $0.
+
+**Acceptance:** `tests/migrate.test.js` — category/status/topic mappings, `override_seq`
+ordering by `override_at`, idempotent replay, chunk replay safety.
+
+---
+
+## M6 — Learn (Pro) · M7 — Vault bridge
+
+**M6:** port `LearnView.jsx` + `beats.jsx` + `flattenLesson`/`conceptSegments` (into
+`web/src/lib.js`) nearly as-is. Routes `POST /api/learn/:id/start|reply|position`,
+`DELETE /api/learn/:id`. Migration `005`: `learn_sessions (user_id, video_id) PK, lesson jsonb,
+position int, messages jsonb`. Prompts from the archived `mentor.js` with a generic persona,
+lesson via structured outputs, `LEARN_MODEL` env (default haiku 4.5). Pro/admin gate.
+
+**M7:** migration `006`: `ingest_requests (id bigserial, user_id, video_id, state CHECK
+('queued','processing','done','failed'), error text, lease_until timestamptz, created_at,
+updated_at)` — reuse the **exact lease pattern** from `classify_jobs` so a crashed bridge run
+self-heals. Hosted: `POST /api/videos/:id/ingest` (admin) enqueues (409 if already queued);
+`POST /api/bridge/claim` (`bridge`-scope token; `FOR UPDATE SKIP LOCKED`; 10-min lease) returns
+the full video row incl. transcript (exactly the fields `buildIngestPrompt` consumes); 204 when
+empty; `POST /api/bridge/requests/:id/complete {vaultNotePath}` → request done, video
+`status='done'` + `vault_note_path` set (renders an "in vault" pill on the cleanup list);
+`.../fail {error}`. VideoDetail gets a "Send to vault" action (admin-only) with queued /
+failed+retry / "in vault · <path>" states.
+
+Local: **`scripts/vault-bridge.js` in the ARCHIVED repo** — a ~80-line poll loop (15s): claim →
+`buildIngestPrompt(video)` (import **unchanged** from its `server/ingestQueue.js`) →
+`runClaude(prompt, {cwd: VAULT_PATH, extraArgs:['--permission-mode','acceptEdits']})` (import
+**unchanged** from its `server/claude.js`; runs on Joon's Max plan, $0 API) → parse the trailing
+`CREATED: <path>` line → complete/fail. `UsageLimitError` → back off 30 min. Env:
+`WLL_API_URL`, `WLL_BRIDGE_TOKEN`, `VAULT_PATH`. **Add no edits to existing archived modules** —
+both functions are already exported.
+
+**Acceptance:** `tests/learn.test.js` (start/reply/position persistence, Pro gate);
+`tests/bridge.test.js` (lease + SKIP LOCKED, expiry reclaim, complete sets video done + path,
+admin-scope gate); `tests/vault-bridge.test.js` in the archived repo mirroring its existing
+`ingestQueue.test.js` style (fake fetch + fake runClaude; CREATED-line parse, fail path,
+usage-limit backoff).
+
+---
+
+## 3. Definition of done (whole plan)
+
+`npm test` green in both repos. `FAKE_LLM=1 DEV_FAKE_AUTH=1 npm start` still runs the entire
+product with zero credentials. The console snippet still works untouched. On prod: connect the
+extension → delta sync finds new videos → full sync count matches the console-snippet count →
+TL;DR works on one video per category → migration reconciliation is clean → the bridge writes
+one real vault note round-trip → auto-sync fires the next day and new videos are already sorted
+when Joon opens the board.
+
+## 4. Risks (and the intended mitigation, so you don't invent a different one)
+
+- **YouTube DOM churn** → the extractor registry + `readPlaylistTotal` cross-check; the snippet
+  is server-served and hot-fixable same-day while a store update crawls review.
+- **Store rejection** → minimal permissions, no static content scripts, single purpose; the
+  product still works via the console path, so rejection is a delay, not an outage.
+- **Alarms unreliability** → `onStartup` catch-up. Manual Sync is the promise; auto is a bonus.
+- **Multi-account YouTube** → popup states which account; site warns on email mismatch.
+- **Token leakage** → sha256 at rest, imports-only scope, existing 5/hr + free-quota + 10K cap
+  bound the blast radius, one-click revoke with `last_used_at` visible.
