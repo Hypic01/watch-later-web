@@ -76,7 +76,8 @@ Locked product decisions (do not relitigate):
 |---|---|---|
 | M1 | API tokens + CORS + collector core v2 | nothing — **start here** |
 | M2 | Extension MVP + site integration (Sync button, connect, live progress) | M1 |
-| M3 | Auto-sync (alarms) + edge cases + Web Store submission | M2 |
+| **M2.5** | **Collection hardening: API-driven pagination (see below). Scroll-scraping caps at ~500-600, this is the real fix.** | M2 |
+| M3 | Auto-sync (alarms) + edge cases + Web Store submission | M2.5 |
 | M4 | Transcript pipeline + VideoDetail + TL;DR + Learn-locked upsell | M2 |
 | M5 | Owner library migration | M4 schema |
 | M6 | Learn mentor real port (Pro) | M4, M5 |
@@ -85,6 +86,78 @@ Locked product decisions (do not relitigate):
 (Joon runs a manual check of the live collector against post-07-12 YouTube in parallel; its
 result only tells us which DOM extractor is live, and M1's extractor registry handles either.
 Do not block on it.)
+
+---
+
+## M2.5 — Collection hardening (the scroll cap is the real problem)
+
+**Confirmed failure (2026-07-14, real run on Joon's ~2,824-video WL):** both the console paste
+(scroll + DOM harvest) AND the extension full sync stall at ~500-600 videos. The console path
+has no service worker and cannot "time out," so this is not our code timing out — **YouTube
+throttles rapid playlist pagination and stops serving continuation batches after a few hundred.**
+The extension correctly failed loud (the M2.5 completeness guard held: it refused to import a
+partial list), but a loud failure is still a failure. Fix the collection itself.
+
+**Root cause + cure (researched, documented):** YouTube's continuation pages get throttled on
+large lists, and per yt-dlp/youtube-dl the documented cure is "retry the SAME continuation token,
+it eventually returns." Also: YouTube rotates its InnerTube client version weekly, which kills a
+fixed scraper but is a non-issue for us because we run inside the real page and read the live
+version from `ytcfg`.
+
+**The fix — drive YouTube's own data feed directly instead of scraping the scrolled DOM:**
+1. **Primary loader = explicit InnerTube pagination**, in the MAIN-world driver:
+   - Seed: first batch + first continuation token from `ytInitialData` (reuse
+     `readInitialContinuationToken`). Read `INNERTUBE_API_KEY` + `INNERTUBE_CONTEXT` from
+     `window.ytcfg`.
+   - Loop: POST `/youtubei/v1/browse` with `{context, continuation: token}` → parse via
+     `parseBrowseResponse` (already returns `{videos, continuationToken}`) → append → advance to
+     the next token. Continue until a response returns **no** token (true end of list).
+   - **Auth without re-deriving it:** the driver's existing fetch/XHR patch already intercepts
+     `/youtubei/v1/browse`. Capture the page's FIRST real continuation request (url + headers +
+     body) and **replay it with the token swapped** for subsequent pages. This inherits the
+     exact auth (SAPISIDHASH), client headers, and context the page used, correct by
+     construction. Fallback only if no request can be captured: build the request from `ytcfg`
+     and compute the SAPISIDHASH.
+2. **Backoff + retry is the core of the fix.** On an empty `continuationItems`, an HTTP error, or
+   a throttle, WAIT (exponential: ~1.5s, 3s, 6s, capped ~20-30s) and **retry the same token**,
+   up to ~8 attempts, before giving up. Pace successful pages ~300-600ms apart so we do not trip
+   the throttle in the first place. This is the documented cure; it is not optional polish.
+3. **Completeness stays structural (keep M2's guard):** done only when a response has no
+   continuation token; TRUNCATED only after retries are exhausted with a token still outstanding.
+   Report `unavailable = total - collected` (private/deleted) as information, never as an error.
+4. **Background tab becomes viable.** `fetch` works in a background tab regardless of visibility,
+   so API-driven full sync should NOT require a visible tab the user must babysit. Aim for
+   background full sync; only fall back to a brief visible phase if capturing the first request
+   genuinely needs a foreground scroll. This is a real UX win, call it out.
+5. **Keep the SW alive across a multi-minute sync:** the driver emits a progress heartbeat at
+   least every ~10s INCLUDING during backoff waits (or the SW uses a `chrome.alarms` keepalive
+   while a sync is active). A 30s backoff must not let the MV3 worker die mid-sync.
+6. **Share the core.** Put the pagination loop in a pure, injected, unit-testable module (extend
+   `collector/continuations.js` or a new `collector/pagination.js`). The extension driver is the
+   priority consumer; the console snippet runs in-page too and should be able to adopt the same
+   loader so the paste fallback stops truncating.
+7. **Keep DOM harvest as a supplementary union source + last-resort fallback**, but the InnerTube
+   loop is authoritative for completeness.
+
+**UX fix (folded in): when the extension is connected, stop luring users onto the weak path.**
+The Import panel currently shows the console-paste flow right next to the extension, so Joon
+grabbed the paste method and got a truncated 600. When the extension is connected, hide or
+collapse the console-snippet instructions behind a "no extension? paste manually" disclosure, and
+make Sync the single obvious primary action.
+
+**Acceptance (extend tests/extension-driver.test.js, tests/continuations.test.js):**
+- Paginates to a token-less end and returns the full set (fake a 2,800-item list across ~28 mocked
+  browse responses).
+- **Backoff-retry: a mocked browse response that is empty/throttled twice then succeeds on the
+  same token yields the complete list, NOT a truncation.** This is the decisive case.
+- TRUNCATED only after retries are exhausted with a token still outstanding.
+- A heartbeat/progress event is emitted during a long backoff wait (assert cadence).
+- Request-replay: the captured first-request headers are reused and only the continuation token in
+  the body changes.
+- `unavailable` count is reported on a fully-walked list; it is never treated as an error.
+
+**Cannot be validated from here** (headless gets the empty WL); final proof is a real run in
+Joon's Chrome reaching his true total minus private/deleted.
 
 ---
 
