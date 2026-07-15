@@ -294,9 +294,20 @@ button { font-family: inherit; cursor: pointer; }
 /* ---------- Expanded category view ---------- */
 .catview { margin-top: var(--space-5); }
 .catview__header { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-4); }
-.catview__chips { margin-bottom: var(--space-4); }
-.catview__chips .filters { margin-top: 0; }
-.catview__controls { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+/* Search is the hero of a category page: centered, roomy, easy to find. */
+.catview__search { display: flex; justify-content: center; margin: var(--space-6) 0 var(--space-5); }
+.searchbox--hero { max-width: 580px; }
+.searchbox--hero svg { left: 18px; }
+.searchbox--hero input { font-size: 15px; padding: 13px 20px 13px 46px; }
+
+/* The toolbar sits directly on top of the grid: filters left, sort right. */
+.catview__toolbar {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: var(--space-4); flex-wrap: wrap; margin-bottom: var(--space-4);
+}
+.catview__toolbar-filters { flex: 1; min-width: 260px; }
+.catview__toolbar-filters .filters { margin-top: 0; }
+.catview__toolbar .sortbox { margin-left: auto; }
 .catview__header h2 { font-family: var(--font-heading); font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
 .grid {
   display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));

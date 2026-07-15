@@ -34,18 +34,21 @@ export default function CategoryView({ row, videos, chips, onMove, onDismiss, on
         <h2>{row.label}</h2>
         <span className="row__count">{videos.length.toLocaleString()}</span>
       </header>
-      <div className="catview__controls">
-        <div className="searchbox">
-          <SearchIcon size={14} />
+      <div className="catview__search">
+        <div className="searchbox searchbox--hero">
+          <SearchIcon size={16} />
           <input type="search" placeholder={`Search in ${row.label.toLowerCase()}…`} value={query}
             onChange={(e) => onQuery(e.target.value)} aria-label={`Search in ${row.label}`} />
         </div>
+      </div>
+      {/* The toolbar hugs the grid: filters on the left, sort order on the right. */}
+      <div className="catview__toolbar">
+        <div className="catview__toolbar-filters">{chips}</div>
         <select className="select sortbox" value={sort} onChange={(e) => onSort(e.target.value)}
           aria-label="Sort videos">
           {Object.entries(SORTS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
         </select>
       </div>
-      {chips && <div className="catview__chips">{chips}</div>}
       {videos.length === 0 ? (
         <div className="row__empty">
           {query.trim() ? `no matches for “${query.trim()}” in this row` : `— ${row.empty ?? "nothing here yet"} —`}
