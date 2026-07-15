@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CONNECTION_KEY,
   RESULT_KEY,
+  SYNC_KEEPALIVE_ALARM,
   SYNC_SESSION_KEY,
   createSyncController,
 } from "../extension/src/sync.js";
@@ -76,6 +77,10 @@ function harness({
     }),
   };
   const scripting = { executeScript: vi.fn(async () => []) };
+  const alarms = {
+    create: vi.fn(async () => {}),
+    clear: vi.fn(async () => true),
+  };
   const local = fakeArea({
     [CONNECTION_KEY]: {
       token: "wll_test",
@@ -96,6 +101,7 @@ function harness({
     tabs,
     scripting,
     storage: { local, session },
+    alarms,
     api: { importVideos: apiImpl },
     now: () => new Date("2026-07-14T12:00:00.000Z"),
     publish: (message) => published.push(message),
@@ -105,6 +111,7 @@ function harness({
     controller,
     tabs,
     scripting,
+    alarms,
     local,
     session,
     apiImpl,
@@ -152,7 +159,7 @@ describe("createSyncController", () => {
     expect(created.created).toEqual([{ url: "https://www.youtube.com/playlist?list=WL", active: false }]);
   });
 
-  it("forwards delta and full modes, and makes a full sync visible", async () => {
+  it("forwards delta and full modes while leaving full sync in the background", async () => {
     const delta = harness();
     await delta.controller.start({ mode: "delta" });
     expect(delta.sent[0].message).toMatchObject({ type: COLLECT_START, mode: "delta" });
@@ -161,17 +168,17 @@ describe("createSyncController", () => {
       existing: { id: 8, url: "https://www.youtube.com/playlist?list=WL", active: false },
     });
     await full.controller.start({ mode: "full" });
-    expect(full.tabs.update).toHaveBeenCalledWith(8, { active: true });
+    expect(full.tabs.update).not.toHaveBeenCalled();
     expect(full.sent[0].message).toMatchObject({ type: COLLECT_START, mode: "full" });
   });
 
-  it("promotes the first requested delta sync to a visible full sync", async () => {
+  it("promotes the first requested delta sync to a background full sync", async () => {
     const h = harness({ firstSync: true });
     await expect(h.controller.start({ mode: "delta" })).resolves.toMatchObject({
       started: true,
       mode: "full",
     });
-    expect(h.created[0].active).toBe(true);
+    expect(h.created[0].active).toBe(false);
     expect(h.sent[0].message.mode).toBe("full");
   });
 
@@ -215,6 +222,39 @@ describe("createSyncController", () => {
     expect(h.tabs.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the worker alive only while a sync is active", async () => {
+    const h = harness();
+
+    await h.controller.start({ mode: "full" });
+    expect(h.alarms.create).toHaveBeenCalledWith(SYNC_KEEPALIVE_ALARM, {
+      periodInMinutes: 0.5,
+    });
+
+    h.alarms.clear.mockClear();
+    await finish(h);
+    expect(h.alarms.clear).toHaveBeenCalledTimes(1);
+    expect(h.alarms.clear).toHaveBeenCalledWith(SYNC_KEEPALIVE_ALARM);
+    expect(h.session.peek(SYNC_SESSION_KEY)).toBeUndefined();
+  });
+
+  it("clears the keepalive alarm when collection fails", async () => {
+    const h = harness();
+    await h.controller.start({ mode: "full" });
+    const state = await currentRun(h);
+    h.alarms.clear.mockClear();
+
+    await h.controller.handleCollectorMessage({
+      type: COLLECT_ERROR,
+      runId: state.runId,
+      code: "TRUNCATED",
+      error: "We could not read the whole list.",
+    }, { tab: { id: state.tabId } });
+
+    expect(h.alarms.clear).toHaveBeenCalledTimes(1);
+    expect(h.alarms.clear).toHaveBeenCalledWith(SYNC_KEEPALIVE_ALARM);
+    expect(h.session.peek(SYNC_SESSION_KEY)).toBeUndefined();
+  });
+
   it("recovers a collecting run after a service worker restart and replays COLLECT_START", async () => {
     const saved = {
       syncing: true,
@@ -232,6 +272,9 @@ describe("createSyncController", () => {
       sessionState: saved,
     });
     await expect(h.controller.recover()).resolves.toEqual({ recovered: true });
+    expect(h.alarms.create).toHaveBeenCalledWith(SYNC_KEEPALIVE_ALARM, {
+      periodInMinutes: 0.5,
+    });
     expect(h.scripting.executeScript).toHaveBeenCalledTimes(2);
     expect(h.sent).toEqual([{ id: 44, message: {
       type: COLLECT_START,

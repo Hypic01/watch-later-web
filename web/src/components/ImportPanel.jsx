@@ -1,6 +1,6 @@
 import React, { useRef, useState } from "react";
 import * as api from "../api.js";
-import { CopyIcon, ExternalIcon, UploadIcon, CheckIcon } from "./icons.jsx";
+import { CheckIcon, CopyIcon, ExternalIcon, SyncIcon } from "./icons.jsx";
 import ExtensionConnection from "./ExtensionConnection.jsx";
 
 export default function ImportPanel({
@@ -8,6 +8,9 @@ export default function ImportPanel({
   extension,
   onConnectExtension,
   extensionBusy,
+  extensionConnected = false,
+  onSyncExtension,
+  extensionSyncing = false,
 }) {
   const [pasted, setPasted] = useState("");
   const [error, setError] = useState(null);
@@ -59,15 +62,8 @@ export default function ImportPanel({
     e.target.value = "";
   };
 
-  return (
-    <div className="importer">
-      <h2>Import your Watch Later</h2>
-      <p>
-        YouTube doesn't let any app read your Watch Later directly, so you export it
-        yourself, in your own browser, in about a minute. Nothing to install.
-      </p>
-      <ExtensionConnection extension={extension} onConnect={onConnectExtension}
-        busy={extensionBusy} surface="import" />
+  const manualImport = (
+    <>
       <div className="importer__steps">
         <div className="istep">
           <div className="istep__body">
@@ -99,9 +95,8 @@ export default function ImportPanel({
               </button>
             </div>
             <p>
-              Paste it in the console, press Enter, and watch it scroll your playlist by
-              itself (a big list takes about a minute). When it finishes, the result is
-              on your clipboard.
+              Paste it in the console and press Enter. A large list can take several
+              minutes. When it finishes, the result is on your clipboard.
             </p>
           </div>
         </div>
@@ -127,10 +122,49 @@ export default function ImportPanel({
         </div>
       </div>
       <p className="importer__privacy">
-        The collector runs only in your browser and only reads your list. No passwords,
-        no cookies, nothing sent anywhere until you paste it here. We store the video
-        titles and metadata you import, and never touch your YouTube account.
+        The collector runs only in your browser and only reads your list. Your YouTube
+        session stays on YouTube, and nothing is sent here until you paste it. We store
+        the video titles and metadata you import, and never change your YouTube account.
       </p>
+    </>
+  );
+
+  return (
+    <div className="importer">
+      <h2>Import your Watch Later</h2>
+      {extensionConnected ? (
+        <p>
+          Your extension is ready. Sync your complete Watch Later directly from your browser.
+        </p>
+      ) : (
+        <p>
+          YouTube doesn't let any app read your Watch Later directly, so you export it
+          yourself, in your own browser. Large libraries can take a few minutes. Nothing to install.
+        </p>
+      )}
+      {extensionConnected ? null : (
+        <ExtensionConnection extension={extension} onConnect={onConnectExtension}
+          busy={extensionBusy} surface="import" />
+      )}
+      {extensionConnected ? (
+        <>
+          <section className="importer__sync" aria-labelledby="extension-sync-title">
+            <span className="importer__sync-icon"><SyncIcon size={20} /></span>
+            <div className="importer__sync-copy">
+              <h3 id="extension-sync-title">Sync with the extension</h3>
+              <p>The extension reads the list in the background. Large libraries can take a few minutes.</p>
+            </div>
+            <button className="btn btn--primary importer__sync-button" type="button"
+              disabled={extensionSyncing} onClick={onSyncExtension}>
+              <SyncIcon size={15} /> {extensionSyncing ? "Syncing…" : "Sync your Watch Later"}
+            </button>
+          </section>
+          <details className="importer__manual">
+            <summary>No extension? Paste manually</summary>
+            {manualImport}
+          </details>
+        </>
+      ) : manualImport}
     </div>
   );
 }

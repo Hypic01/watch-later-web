@@ -490,6 +490,42 @@ button { font-family: inherit; cursor: pointer; }
 .importer__error { color: var(--color-destructive); font-size: 13.5px; }
 .importer__privacy { margin-top: var(--space-4); color: var(--color-faint); font-size: 12.5px; max-width: 62ch; }
 
+.importer__sync {
+  display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  margin-top: var(--space-4); padding: var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 42%, var(--color-border));
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 13%, var(--color-surface)), var(--color-surface));
+  box-shadow: var(--shadow-raised);
+}
+.importer__sync-icon {
+  width: 42px; height: 42px; flex: 0 0 auto; display: grid; place-items: center;
+  color: var(--color-primary-soft); border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+.importer__sync-copy { flex: 1; min-width: 220px; }
+.importer__sync-copy h3 { font-family: var(--font-heading); font-size: 16px; letter-spacing: -.01em; }
+.importer__sync-copy p { color: var(--color-muted); font-size: 13.5px; margin-top: 3px; }
+.importer__sync-button { flex: 0 0 auto; }
+.importer__manual { margin-top: var(--space-4); }
+.importer__manual > summary {
+  width: fit-content; padding: 6px 2px; color: var(--color-faint);
+  font-size: 12.5px; cursor: pointer; transition: color var(--speed) var(--ease);
+}
+.importer__manual > summary:hover { color: var(--color-muted); }
+.importer__manual > summary:focus-visible {
+  color: var(--color-foreground); outline: 2px solid var(--color-primary); outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+.importer__manual[open] > summary { color: var(--color-muted); }
+.importer__manual .importer__steps { margin-top: var(--space-3); }
+
+@media (max-width: 620px) {
+  .importer__sync { align-items: flex-start; }
+  .importer__sync-button { width: 100%; justify-content: center; }
+}
+
 .extension-card {
   display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
   margin-top: var(--space-4); padding: var(--space-4);

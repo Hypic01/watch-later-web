@@ -1,5 +1,8 @@
 import { createExtensionApi } from "./api.js";
-import { createSyncController } from "./sync.js";
+import {
+  SYNC_KEEPALIVE_ALARM,
+  createSyncController,
+} from "./sync.js";
 import {
   COLLECT_DONE,
   COLLECT_ERROR,
@@ -27,6 +30,7 @@ const controller = createSyncController({
   tabs: chrome.tabs,
   scripting: chrome.scripting,
   storage: chrome.storage,
+  alarms: chrome.alarms,
   api: createExtensionApi({ fetch: globalThis.fetch.bind(globalThis) }),
   now: Date.now,
   publish,
@@ -86,6 +90,12 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   controller.handleTabUpdated(tabId, changeInfo, tab).catch(() => {});
+});
+
+// This alarm exists only while a sync is active. Its event wakes an idle MV3
+// worker while a hidden YouTube tab is in a long continuation backoff.
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm?.name === SYNC_KEEPALIVE_ALARM) controller.recover().catch(() => {});
 });
 
 controller.recover().catch(() => {});

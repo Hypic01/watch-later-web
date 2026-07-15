@@ -45,7 +45,10 @@ export function availabilitySummary(result = {}) {
   const availableCount = Math.trunc(collected);
   const unavailableCount = Math.trunc(unavailable);
   const playlistTotal = availableCount + unavailableCount;
-  return `${availableCount.toLocaleString()} of ${playlistTotal.toLocaleString()} videos were available. The other ${unavailableCount.toLocaleString()} are private or deleted.`;
+  const unavailableText = unavailableCount === 1
+    ? "The other video is private or deleted."
+    : `The other ${unavailableCount.toLocaleString()} are private or deleted.`;
+  return `${availableCount.toLocaleString()} of ${playlistTotal.toLocaleString()} videos were available. ${unavailableText}`;
 }
 
 function sendMessage(runtime, extensionId, type, payload = {}) {

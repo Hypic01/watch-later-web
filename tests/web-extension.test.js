@@ -31,5 +31,8 @@ describe("website extension helpers", () => {
     );
     expect(availabilitySummary({ collected: 100, unavailable: 0 })).toBe("");
     expect(availabilitySummary({ collected: 60 })).toBe("");
+    expect(availabilitySummary({ collected: 99, unavailable: 1 })).toBe(
+      "99 of 100 videos were available. The other video is private or deleted.",
+    );
   });
 });

@@ -494,7 +494,9 @@ export default function App() {
           <Onboarding onDone={() => reload().then(() => setView("board"))} />
         ) : view === "import" ? (
           <ImportPanel onImported={onImported} extension={extension}
-            onConnectExtension={connectExtension} extensionBusy={extensionBusy} />
+            onConnectExtension={connectExtension} extensionBusy={extensionBusy}
+            extensionConnected={extensionConnected} onSyncExtension={syncExtension}
+            extensionSyncing={extensionSyncing} />
         ) : view === "cleanup" ? (
           <CleanupChecklist />
         ) : ROWS.some((r) => r.key === view) ? (

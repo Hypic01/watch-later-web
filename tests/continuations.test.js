@@ -121,4 +121,15 @@ describe("parseBrowseResponse", () => {
 
     expect(result).toEqual({ videos: [], continuationToken: "nested-next-page" });
   });
+
+  it("keeps pagination moving across a page containing only unavailable entries", () => {
+    const result = parseBrowseResponse(browseResponse([
+      { unavailableRenderer: { reason: "Private video" } },
+    ], "after-unavailable-page"));
+
+    expect(result).toEqual({
+      videos: [],
+      continuationToken: "after-unavailable-page",
+    });
+  });
 });

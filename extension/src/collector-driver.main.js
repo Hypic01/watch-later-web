@@ -1,11 +1,17 @@
 import {
   collectInitial,
   createCollector,
+  isMateriallyShort,
   parseInitialData,
   readInitialContinuationToken,
   readPlaylistTotal,
 } from "../../collector/collector.js";
 import { parseBrowseResponse } from "../../collector/continuations.js";
+import { createYtcfgRequestTemplate } from "../../collector/innertube.js";
+import {
+  createContinuationPaginator,
+  hasContinuationItems,
+} from "../../collector/pagination.js";
 import {
   COLLECT_DONE,
   COLLECT_ERROR,
@@ -13,8 +19,8 @@ import {
   COLLECT_START,
 } from "./messages.js";
 
-const DEFAULT_MINIMUM_HARVEST_RATIO = 0.5;
-const DEFAULT_CAPTURE_DRAIN_TIMEOUT_MS = 10000;
+const DEFAULT_CAPTURE_DRAIN_TIMEOUT_MS = 7000;
+const DEFAULT_CAPTURE_REQUEST_TIMEOUT_MS = 1500;
 const LISTENER_KEY = Symbol.for("wll.collector-driver.listener");
 
 class CollectionError extends Error {
@@ -40,10 +46,103 @@ function isBrowseRequest(input, win) {
   if (!raw) return false;
   try {
     const base = win?.location?.href || "https://www.youtube.com/";
-    return new URL(raw, base).pathname === "/youtubei/v1/browse";
+    const request = new URL(raw, base);
+    const page = new URL(base);
+    return request.origin === page.origin && request.pathname === "/youtubei/v1/browse";
   } catch {
     return false;
   }
+}
+
+function absoluteRequestUrl(input, win) {
+  const raw = requestUrl(input);
+  if (!raw) return "";
+  try {
+    return new URL(raw, win?.location?.href || "https://www.youtube.com/").href;
+  } catch {
+    return raw;
+  }
+}
+
+function headerPairs(headers) {
+  if (!headers) return [];
+  if (Array.isArray(headers)) {
+    return headers
+      .filter((entry) => Array.isArray(entry) && entry.length >= 2)
+      .map(([name, value]) => [String(name), String(value)]);
+  }
+  if (typeof headers.forEach === "function") {
+    const pairs = [];
+    headers.forEach((value, name) => pairs.push([String(name), String(value)]));
+    return pairs;
+  }
+  if (typeof headers === "object") {
+    return Object.entries(headers).map(([name, value]) => [String(name), String(value)]);
+  }
+  return [];
+}
+
+function bodyObject(body) {
+  if (typeof body === "string") {
+    try {
+      const parsed = JSON.parse(body);
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return body && typeof body === "object" && !Array.isArray(body) ? body : null;
+}
+
+function requestContinuation(body) {
+  const parsed = bodyObject(body);
+  return typeof parsed?.continuation === "string" && parsed.continuation
+    ? parsed.continuation
+    : null;
+}
+
+function copiedFetchInit(input, init, body) {
+  const source = init && typeof init === "object" ? init : {};
+  const request = input && typeof input === "object" ? input : {};
+  const copied = { ...source };
+  delete copied.signal;
+  copied.method = String(source.method || request.method || "POST").toUpperCase();
+  copied.headers = headerPairs(source.headers ?? request.headers);
+  copied.body = typeof body === "string" ? body : JSON.stringify(body);
+  for (const key of [
+    "cache",
+    "credentials",
+    "integrity",
+    "keepalive",
+    "mode",
+    "redirect",
+    "referrer",
+    "referrerPolicy",
+  ]) {
+    if (copied[key] === undefined && request[key] !== undefined) copied[key] = request[key];
+  }
+  return copied;
+}
+
+async function fetchRequestTemplate(input, init, win) {
+  let body = init && Object.prototype.hasOwnProperty.call(init, "body") ? init.body : undefined;
+  if (body === undefined && input && typeof input.clone === "function") {
+    try {
+      const copy = input.clone();
+      if (typeof copy.text === "function") body = await copy.text();
+    } catch {
+      return null;
+    }
+  }
+  const parsed = bodyObject(body);
+  if (!parsed) return null;
+  return {
+    token: requestContinuation(parsed),
+    template: {
+      url: absoluteRequestUrl(input, win),
+      init: copiedFetchInit(input, init, parsed),
+    },
+  };
 }
 
 function mergeVideos(...groups) {
@@ -56,20 +155,21 @@ function mergeVideos(...groups) {
   return Array.from(videos.values());
 }
 
-export function isMateriallyShort(
-  count,
-  expectedTotal,
-  { minimumHarvestRatio = DEFAULT_MINIMUM_HARVEST_RATIO } = {},
-) {
-  const expected = Number(expectedTotal);
-  const harvested = Number(count);
-  if (!Number.isFinite(expected) || expected <= 0 || !Number.isFinite(harvested)) return false;
-  const threshold = Number(minimumHarvestRatio);
-  const ratio = Number.isFinite(threshold) && threshold >= 0 && threshold <= 1
-    ? threshold
-    : DEFAULT_MINIMUM_HARVEST_RATIO;
-  return harvested < expected * ratio;
+function normalizeVideoOrder(...groups) {
+  const merged = mergeVideos(...groups);
+  let nextPosition = 0;
+  return merged.map((video) => {
+    const position = Number(video?.position);
+    if (Number.isFinite(position) && position > 0) {
+      nextPosition = Math.max(nextPosition, position);
+      return video;
+    }
+    nextPosition++;
+    return { ...video, position: nextPosition };
+  });
 }
+
+export { isMateriallyShort };
 
 // Installed only while a full collection is running. It observes the browser's
 // own continuation requests and never consumes the response object YouTube sees.
@@ -77,6 +177,8 @@ export function installBrowseCapture({
   win,
   onVideos = () => {},
   onResponse = () => {},
+  onRequest = () => {},
+  expectedToken = null,
   parse = parseBrowseResponse,
   setTimer = (fn, ms) => globalThis.setTimeout(fn, ms),
   clearTimer = (timer) => globalThis.clearTimeout(timer),
@@ -86,13 +188,39 @@ export function installBrowseCapture({
   const xhrPrototype = win?.XMLHttpRequest?.prototype || null;
   const originalOpen = typeof xhrPrototype?.open === "function" ? xhrPrototype.open : null;
   const originalSend = typeof xhrPrototype?.send === "function" ? xhrPrototype.send : null;
+  const originalSetRequestHeader = typeof xhrPrototype?.setRequestHeader === "function"
+    ? xhrPrototype.setRequestHeader
+    : null;
   const xhrRequests = new WeakMap();
   let wrappedFetch = null;
   let wrappedOpen = null;
   let wrappedSend = null;
+  let wrappedSetRequestHeader = null;
   let requestSequence = 0;
   let nextDelivery = 1;
   const completed = new Map();
+  let firstRequest = null;
+  let firstResponse = null;
+  let resolveFirstRequest;
+  const firstRequestPromise = new Promise((resolve) => { resolveFirstRequest = resolve; });
+
+  const acceptRequest = (candidate) => {
+    if (
+      firstRequest ||
+      !candidate?.template?.url ||
+      (expectedToken !== null && candidate.token !== expectedToken)
+    ) {
+      return candidate;
+    }
+    firstRequest = candidate.template;
+    resolveFirstRequest(firstRequest);
+    try {
+      onRequest(firstRequest);
+    } catch {
+      // Request capture is observational. Never disturb YouTube's request.
+    }
+    return candidate;
+  };
 
   const deliver = (sequence, result) => {
     if (sequence < nextDelivery || completed.has(sequence)) return;
@@ -102,6 +230,13 @@ export function installBrowseCapture({
       completed.delete(nextDelivery);
       nextDelivery++;
       if (!next) continue;
+      if (
+        firstResponse === null &&
+        expectedToken !== null &&
+        next.requestToken === expectedToken
+      ) {
+        firstResponse = next;
+      }
       try {
         if (next.videos.length) onVideos(next.videos);
         onResponse(next);
@@ -112,7 +247,7 @@ export function installBrowseCapture({
     }
   };
 
-  const acceptBody = (body, sequence) => {
+  const acceptBody = (body, sequence, request = {}, response = {}) => {
     if (typeof body === "string") {
       try {
         JSON.parse(body);
@@ -135,7 +270,14 @@ export function installBrowseCapture({
         && parsed.continuationToken
         ? parsed.continuationToken
         : null;
-      deliver(sequence, { videos, continuationToken });
+      deliver(sequence, {
+        videos,
+        continuationToken,
+        continuationItems: hasContinuationItems(body),
+        requestToken: request?.token || null,
+        status: Number.isFinite(Number(response?.status)) ? Number(response.status) : null,
+        ok: response?.ok !== false,
+      });
     } catch {
       deliver(sequence, null);
     }
@@ -151,17 +293,18 @@ export function installBrowseCapture({
     return task;
   };
 
-  const captureFetchResponse = async (response, sequence) => {
+  const captureFetchResponse = async (response, sequence, requestPromise) => {
     try {
+      const request = await requestPromise;
       const copy = typeof response?.clone === "function" ? response.clone() : null;
       if (!copy) {
         deliver(sequence, null);
         return;
       }
       if (typeof copy.json === "function") {
-        acceptBody(await copy.json(), sequence);
+        acceptBody(await copy.json(), sequence, request, response);
       } else if (typeof copy.text === "function") {
-        acceptBody(await copy.text(), sequence);
+        acceptBody(await copy.text(), sequence, request, response);
       } else {
         deliver(sequence, null);
       }
@@ -172,14 +315,17 @@ export function installBrowseCapture({
     }
   };
 
-  const captureXhrResponse = (xhr, sequence) => {
+  const captureXhrResponse = (xhr, sequence, request) => {
     try {
       const body = xhr.responseType === "json"
         ? xhr.response
         : typeof xhr.responseText === "string"
           ? xhr.responseText
           : xhr.response;
-      acceptBody(body, sequence);
+      acceptBody(body, sequence, request, {
+        status: xhr.status,
+        ok: !Number.isFinite(Number(xhr.status)) || Number(xhr.status) < 400,
+      });
     } catch {
       deliver(sequence, null);
       // Accessing responseText can throw for non-text response types. Those
@@ -188,19 +334,44 @@ export function installBrowseCapture({
   };
 
   const restore = () => {
-    if (originalFetch) win.fetch = originalFetch;
-    if (xhrPrototype && originalOpen) xhrPrototype.open = originalOpen;
-    if (xhrPrototype && originalSend) xhrPrototype.send = originalSend;
+    try {
+      if (xhrPrototype && originalSend && xhrPrototype.send === wrappedSend) {
+        xhrPrototype.send = originalSend;
+      }
+    } catch { /* Continue restoring the remaining hooks. */ }
+    try {
+      if (
+        xhrPrototype &&
+        originalSetRequestHeader &&
+        xhrPrototype.setRequestHeader === wrappedSetRequestHeader
+      ) {
+        xhrPrototype.setRequestHeader = originalSetRequestHeader;
+      }
+    } catch { /* Continue restoring the remaining hooks. */ }
+    try {
+      if (xhrPrototype && originalOpen && xhrPrototype.open === wrappedOpen) {
+        xhrPrototype.open = originalOpen;
+      }
+    } catch { /* Continue restoring the remaining hooks. */ }
+    try {
+      if (originalFetch && win.fetch === wrappedFetch) win.fetch = originalFetch;
+    } catch { /* The page may have made fetch read only during navigation. */ }
   };
 
   try {
     if (originalFetch) {
       wrappedFetch = function wllCapturedFetch(...args) {
+        const browse = isBrowseRequest(args[0], win);
+        // Clone a Request body before fetch marks the original as consumed.
+        // This starts capture without delaying or replacing YouTube's promise.
+        const requestPromise = browse
+          ? Promise.resolve(fetchRequestTemplate(args[0], args[1], win)).then(acceptRequest)
+          : null;
         const responsePromise = Reflect.apply(originalFetch, this, args);
-        if (isBrowseRequest(args[0], win)) {
+        if (browse) {
           const sequence = ++requestSequence;
           track(Promise.resolve(responsePromise).then(
-            (response) => captureFetchResponse(response, sequence),
+            (response) => captureFetchResponse(response, sequence, requestPromise),
             () => deliver(sequence, null),
           ));
         }
@@ -211,19 +382,44 @@ export function installBrowseCapture({
 
     if (xhrPrototype && originalOpen && originalSend) {
       wrappedOpen = function wllCapturedOpen(method, url, ...rest) {
-        xhrRequests.set(this, { browse: isBrowseRequest(url, win), listening: false });
+        xhrRequests.set(this, {
+          browse: isBrowseRequest(url, win),
+          listening: false,
+          method: String(method || "POST").toUpperCase(),
+          url: absoluteRequestUrl(url, win),
+          headers: [],
+        });
         return Reflect.apply(originalOpen, this, [method, url, ...rest]);
       };
+      if (originalSetRequestHeader) {
+        wrappedSetRequestHeader = function wllCapturedSetRequestHeader(name, value) {
+          const request = xhrRequests.get(this);
+          if (request?.browse) request.headers.push([String(name), String(value)]);
+          return Reflect.apply(originalSetRequestHeader, this, [name, value]);
+        };
+      }
       wrappedSend = function wllCapturedSend(...args) {
         const request = xhrRequests.get(this);
         if (request?.browse && !request.listening && typeof this.addEventListener === "function") {
           request.listening = true;
           request.sequence = ++requestSequence;
+          const parsedBody = bodyObject(args[0]);
+          request.token = requestContinuation(parsedBody);
+          request.template = parsedBody ? {
+            url: request.url,
+            init: {
+              method: request.method,
+              headers: request.headers.map((entry) => [...entry]),
+              body: JSON.stringify(parsedBody),
+              credentials: this.withCredentials ? "include" : "same-origin",
+            },
+          } : null;
+          acceptRequest(request);
           let finish;
           track(new Promise((resolve) => { finish = resolve; }));
           this.addEventListener("loadend", () => {
             try {
-              captureXhrResponse(this, request.sequence);
+              captureXhrResponse(this, request.sequence, request);
             } finally {
               finish();
             }
@@ -239,6 +435,7 @@ export function installBrowseCapture({
         return Reflect.apply(originalSend, this, args);
       };
       xhrPrototype.open = wrappedOpen;
+      if (wrappedSetRequestHeader) xhrPrototype.setRequestHeader = wrappedSetRequestHeader;
       xhrPrototype.send = wrappedSend;
     }
   } catch (error) {
@@ -247,6 +444,26 @@ export function installBrowseCapture({
   }
 
   return {
+    get requestTemplate() {
+      return firstRequest;
+    },
+    get firstResponse() {
+      return firstResponse;
+    },
+    async waitForRequest({ timeoutMs = DEFAULT_CAPTURE_REQUEST_TIMEOUT_MS } = {}) {
+      if (firstRequest) return firstRequest;
+      let timer = null;
+      try {
+        return await Promise.race([
+          firstRequestPromise,
+          new Promise((resolve) => {
+            timer = setTimer(() => resolve(null), Math.max(0, Number(timeoutMs) || 0));
+          }),
+        ]);
+      } finally {
+        if (timer !== null) clearTimer(timer);
+      }
+    },
     async drain({ timeoutMs = DEFAULT_CAPTURE_DRAIN_TIMEOUT_MS } = {}) {
       if (!pending.size) return;
       const waitForPending = async () => {
@@ -284,8 +501,12 @@ export function createCollectorDriver({
   readInitialContinuationTokenImpl = readInitialContinuationToken,
   readPlaylistTotalImpl = readPlaylistTotal,
   installBrowseCaptureImpl = installBrowseCapture,
+  createContinuationPaginatorImpl = createContinuationPaginator,
+  createYtcfgRequestTemplateImpl = createYtcfgRequestTemplate,
   collectorOptions = {},
   completeness = {},
+  paginationOptions = {},
+  captureRequestTimeoutMs = DEFAULT_CAPTURE_REQUEST_TIMEOUT_MS,
   captureDrainTimeoutMs = DEFAULT_CAPTURE_DRAIN_TIMEOUT_MS,
 }) {
   const emit = (type, runId, payload = {}) => {
@@ -321,71 +542,163 @@ export function createCollectorDriver({
         );
       }
 
-      const initialVideos = parseInitialDataImpl(win);
-      const initialHasMore = readInitialContinuationTokenImpl(win) !== null;
-      let hasMore = initialHasMore;
-      let capturedResponseCount = 0;
-      const supplemental = new Map(initialVideos.map((video) => [video.id, video]));
-      let supplementalPosition = Math.max(
-        supplemental.size,
-        ...initialVideos.map((video) => {
-          const position = Number(video.position);
-          return Number.isFinite(position) && position > 0 ? position : 0;
-        }),
+      const initialToken = readInitialContinuationTokenImpl(win);
+      let continuationToken = typeof initialToken === "string" && initialToken
+        ? initialToken
+        : null;
+      let hasStructuralCompletion = false;
+      let videos = normalizeVideoOrder(
+        parseInitialDataImpl(win),
+        collectInitialImpl({ doc, win }),
       );
-      const capture = installBrowseCaptureImpl({
-        win,
-        onResponse({ videos, continuationToken }) {
-          capturedResponseCount++;
-          hasMore = continuationToken !== null;
-          for (const video of videos) {
-            if (!video?.id || supplemental.has(video.id)) continue;
-            const position = Number(video.position);
-            const hasForwardPosition = Number.isFinite(position)
-              && position > supplementalPosition;
-            const normalized = hasForwardPosition
-              ? { ...video, position }
-              : { ...video, position: supplementalPosition + 1 };
-            supplemental.set(video.id, normalized);
-            supplementalPosition = normalized.position;
+      emit(COLLECT_PROGRESS, runId, { count: videos.length, expectedTotal });
+
+      if (continuationToken !== null) {
+        let capturedResponse = null;
+        let requestTemplate = null;
+        let capture = null;
+        try {
+          capture = installBrowseCaptureImpl({
+            win,
+            expectedToken: continuationToken,
+            onResponse(response) {
+              if (
+                capturedResponse === null &&
+                response?.requestToken === continuationToken
+              ) {
+                capturedResponse = response;
+              }
+            },
+          });
+
+          // This is a one-time request-template probe, not the pagination
+          // loader. It can run in a background tab. If visibility prevents the
+          // page from issuing a request, the live ytcfg fallback below takes over.
+          const originalScrollY = Number(win?.scrollY);
+          const canRestoreScroll = Number.isFinite(originalScrollY);
+          try {
+            if (
+              typeof win?.scrollTo === "function" &&
+              doc?.documentElement
+            ) {
+              win.scrollTo(0, doc.documentElement.scrollHeight);
+            }
+          requestTemplate = typeof capture?.waitForRequest === "function"
+            ? await capture.waitForRequest({ timeoutMs: captureRequestTimeoutMs })
+            : capture?.requestTemplate || null;
+          if (requestTemplate && !isBrowseRequest(requestTemplate.url, win)) {
+            requestTemplate = null;
           }
-        },
-      });
-
-      let result;
-      let videos;
-      try {
-        const collector = createCollectorImpl({
-          doc,
-          win,
-          sleep,
-          ...collectorOptions,
-          getSupplementalVideos: () => supplemental.values(),
-        });
-        result = await collector.collectAll({
-          onProgress({ count }) {
-            emit(COLLECT_PROGRESS, runId, { count, expectedTotal });
-          },
-        });
-        await capture.drain({ timeoutMs: captureDrainTimeoutMs });
-        videos = mergeVideos(result.videos, supplemental.values());
-
-        const structurallyTruncated = capturedResponseCount > 0 && hasMore;
-        const needsFallback = initialHasMore && capturedResponseCount === 0;
-        const catastrophicallyShort = needsFallback
-          && isMateriallyShort(videos.length, expectedTotal, completeness);
-        if (structurallyTruncated || catastrophicallyShort) {
-          throw new CollectionError(
-            "TRUNCATED",
-            "We could not read the whole Watch Later list. Try again and keep the YouTube tab visible.",
-          );
+          } finally {
+            if (canRestoreScroll && typeof win?.scrollTo === "function") {
+              try {
+                win.scrollTo(Number(win.scrollX) || 0, originalScrollY);
+              } catch {
+                // The page may have navigated while the probe was running.
+              }
+            }
+          }
+          if (requestTemplate && typeof capture?.drain === "function") {
+            try {
+              await capture.drain({ timeoutMs: captureDrainTimeoutMs });
+            } catch {
+              // The captured request metadata is sufficient. The paginator
+              // will retry the same token if the page's natural response hung.
+            }
+          }
+          capturedResponse = capture?.firstResponse || capturedResponse;
+        } catch {
+          requestTemplate = null;
+          capturedResponse = null;
+        } finally {
+          capture?.restore?.();
         }
-      } finally {
-        capture.restore();
+
+        const naturalPageComplete = (
+          capturedResponse?.ok !== false &&
+          capturedResponse?.continuationItems === true &&
+          capturedResponse?.continuationToken !== continuationToken
+        );
+        if (naturalPageComplete) {
+          hasStructuralCompletion = capturedResponse.continuationToken === null;
+          videos = normalizeVideoOrder(videos, capturedResponse.videos);
+          continuationToken = capturedResponse.continuationToken;
+          emit(COLLECT_PROGRESS, runId, { count: videos.length, expectedTotal });
+        }
+
+        if (continuationToken !== null && !requestTemplate) {
+          try {
+            requestTemplate = await createYtcfgRequestTemplateImpl({ win, doc });
+          } catch (setupError) {
+            // DOM scrolling is retained only as a last-resort union source. It
+            // is accepted without a structural end marker only when it reaches
+            // the exact advertised total. Otherwise nothing is imported.
+            let fallbackVideos = videos;
+            try {
+              const collector = createCollectorImpl({ doc, win, sleep, ...collectorOptions });
+              const fallback = await collector.collectAll({
+                onProgress({ count }) {
+                  emit(COLLECT_PROGRESS, runId, {
+                    count: Math.max(videos.length, Number(count) || 0),
+                    expectedTotal,
+                  });
+                },
+              });
+              fallbackVideos = normalizeVideoOrder(videos, fallback.videos);
+            } catch {
+              // The structural failure below is the actionable result.
+            }
+            if (fallbackVideos.length < Number(expectedTotal)) {
+              throw new CollectionError(
+                "TRUNCATED",
+                "We could not read the whole Watch Later list after repeated attempts. Try again.",
+              );
+            }
+            videos = fallbackVideos;
+            continuationToken = null;
+          }
+        }
+
+        if (continuationToken !== null) {
+          const fetchImpl = typeof win?.fetch === "function"
+            ? (...args) => Reflect.apply(win.fetch, win, args)
+            : undefined;
+          const paginator = createContinuationPaginatorImpl({
+            fetch: fetchImpl,
+            sleep,
+            ...paginationOptions,
+          });
+          const paginated = await paginator.paginate({
+            initialVideos: videos,
+            continuationToken,
+            requestTemplate,
+            onProgress({ count }) {
+              emit(COLLECT_PROGRESS, runId, { count, expectedTotal });
+            },
+          });
+          if (!paginated?.complete || paginated.continuationToken !== null) {
+            throw new CollectionError(
+              "TRUNCATED",
+              "We could not read the whole Watch Later list after repeated attempts. Try again.",
+            );
+          }
+          videos = normalizeVideoOrder(paginated.videos, collectInitialImpl({ doc, win }));
+          continuationToken = null;
+          hasStructuralCompletion = true;
+        }
       }
 
-      const paginationComplete = !initialHasMore || capturedResponseCount > 0;
-      const unavailable = paginationComplete
+      if (
+        !hasStructuralCompletion &&
+        isMateriallyShort(videos.length, expectedTotal, completeness)
+      ) {
+        throw new CollectionError(
+          "TRUNCATED",
+          "We could not read the whole Watch Later list after repeated attempts. Try again.",
+        );
+      }
+
+      const unavailable = hasStructuralCompletion || videos.length >= Number(expectedTotal)
         ? Math.max(0, Number(expectedTotal) - videos.length)
         : null;
       emit(COLLECT_DONE, runId, {

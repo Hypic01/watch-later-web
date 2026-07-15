@@ -14,6 +14,9 @@ export const WATCH_LATER_URL = "https://www.youtube.com/playlist?list=WL";
 export const SYNC_SESSION_KEY = "wll.sync";
 export const CONNECTION_KEY = "wll.connection";
 export const RESULT_KEY = "wll.result";
+export const SYNC_KEEPALIVE_ALARM = "wll.sync.keepalive";
+
+const KEEPALIVE_PERIOD_MINUTES = 0.5;
 
 function isoTime(now) {
   const value = typeof now === "function" ? now() : Date.now();
@@ -62,6 +65,7 @@ export function createSyncController({
   scripting,
   storage,
   api,
+  alarms = null,
   now = Date.now,
   publish = () => {},
   setBadge = () => {},
@@ -109,6 +113,26 @@ export function createSyncController({
     return next;
   }
 
+  async function ensureKeepalive() {
+    if (typeof alarms?.create !== "function") return;
+    try {
+      await alarms.create(SYNC_KEEPALIVE_ALARM, {
+        periodInMinutes: KEEPALIVE_PERIOD_MINUTES,
+      });
+    } catch {
+      // Driver heartbeats remain the fallback on browsers without alarms.
+    }
+  }
+
+  async function stopKeepalive() {
+    if (typeof alarms?.clear !== "function") return;
+    try {
+      await alarms.clear(SYNC_KEEPALIVE_ALARM);
+    } catch {
+      // A stale alarm is harmless and recovery will try to clear it again.
+    }
+  }
+
   async function update(patch) {
     if (!activeState) return null;
     return persist({ ...activeState, ...patch });
@@ -117,6 +141,7 @@ export function createSyncController({
   async function clearActive() {
     activeState = null;
     await session.remove(SYNC_SESSION_KEY);
+    await stopKeepalive();
   }
 
   async function closeCreatedTab(snapshot) {
@@ -213,11 +238,9 @@ export function createSyncController({
     if (!tab) {
       tab = await tabs.create({
         url: WATCH_LATER_URL,
-        active: snapshot.mode === "full",
+        active: false,
       });
       createdTab = true;
-    } else if (snapshot.mode === "full" && !tab.active && typeof tabs.update === "function") {
-      tab = { ...tab, ...(await tabs.update(tab.id, { active: true })) };
     }
 
     await update({ tabId: tab.id, createdTab });
@@ -278,8 +301,12 @@ export function createSyncController({
 
   async function doRecover() {
     const saved = await read(session, SYNC_SESSION_KEY);
-    if (!saved?.syncing) return { recovered: false };
+    if (!saved?.syncing) {
+      await stopKeepalive();
+      return { recovered: false };
+    }
     activeState = saved;
+    await ensureKeepalive();
 
     if (saved.phase === "importing" && Array.isArray(saved.pendingVideos)) {
       await importVideos(saved.pendingVideos, false, saved.pendingCollection);
@@ -331,6 +358,7 @@ export function createSyncController({
         expectedTotal: null,
         startedAt,
       });
+      await ensureKeepalive();
       await notify({ type: WLL_SYNC_PHASE, phase: "opening" });
       await badge("…");
 

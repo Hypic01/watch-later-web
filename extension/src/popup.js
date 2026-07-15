@@ -33,7 +33,9 @@ async function renderStatus() {
       return;
     }
     emailNode.textContent = status.email || "Connected";
-    statusNode.textContent = status.syncing ? "Sync is running." : resultText(status.lastResult);
+    statusNode.textContent = status.syncing
+      ? "Sync is running in the background. You can close this popup."
+      : resultText(status.lastResult);
     setBusy(!!status.syncing);
   } catch {
     statusNode.textContent = "The extension could not read its status.";
@@ -48,7 +50,7 @@ async function start(mode) {
     const reply = await send({ type: WLL_SYNC, mode });
     if (reply?.started) {
       statusNode.textContent = mode === "full"
-        ? "Keep the YouTube tab visible while it collects."
+        ? "Full sync started in the background. You can close this popup."
         : "Sync started. You can close this popup.";
     } else if (reply?.error === "NOT_CONNECTED") {
       statusNode.textContent = "Connect this extension from Watch Later Librarian.";

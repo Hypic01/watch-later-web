@@ -1,10 +1,26 @@
-// Core Watch Later collector. Runs inside the user's own logged-in browser
-// (console snippet today, Chrome extension later). Strategy validated 2026-07-10
-// against a real 2,796-video Watch Later: scroll-driven pagination with Polymer
-// `.data` harvesting and aggressive DOM pruning (unpruned pages OOM-crash the
-// tab past ~2,000 rendered items). 100% of available videos captured.
+// Core Watch Later extractors. Runs inside the user's own logged-in browser.
+// Explicit InnerTube pagination is the authoritative loader for large lists.
+// The scroll and prune collector remains a supplementary DOM fallback.
 
 export const PAYLOAD_VERSION = 1;
+const DEFAULT_MINIMUM_HARVEST_RATIO = 0.5;
+
+// Count is never the primary completion signal. This is deliberately loose
+// and is used only when YouTube exposes no pagination evidence at all.
+export function isMateriallyShort(
+  count,
+  expectedTotal,
+  { minimumHarvestRatio = DEFAULT_MINIMUM_HARVEST_RATIO } = {},
+) {
+  const expected = Number(expectedTotal);
+  const harvested = Number(count);
+  if (!Number.isFinite(expected) || expected <= 0 || !Number.isFinite(harvested)) return false;
+  const threshold = Number(minimumHarvestRatio);
+  const ratio = Number.isFinite(threshold) && threshold >= 0 && threshold <= 1
+    ? threshold
+    : DEFAULT_MINIMUM_HARVEST_RATIO;
+  return harvested < expected * ratio;
+}
 
 export function isWatchLaterPage(loc) {
   try {
