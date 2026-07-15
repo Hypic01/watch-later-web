@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { testDb, seedUser, vids, U1 } from "./helpers.js";
 import { createWorker } from "../server/worker.js";
-import { createFakeLlm } from "../server/anthropic.js";
+import { createFakeLlm, createLlm } from "../server/anthropic.js";
 import { loadConfig } from "../server/config.js";
 
 let db;
@@ -163,6 +163,30 @@ describe("batch jobs", () => {
     expect(j.state).toBe("completed");
     expect(await db.countUnscanned(U1)).toBe(0);
     expect(j.processed).toBe(60);
+  });
+
+  it("a batch that cannot be submitted fails the job with the reason, not a silent spin", async () => {
+    // The regression that shipped a stuck-at-0 sort: submit threw (beta-only
+    // output_config on the stable endpoint), the poll swallowed it, and the job
+    // spun forever. Now the reason lands on the job so the UI can show it.
+    await db.upsertFromImport(U1, vids(60), 10000);
+    const job = await db.createJob(U1, { mode: "batch", tier: "pro", total: 60 });
+    const badBatch = { ...createFakeLlm(), submitBatch: async () => { throw new Error("invalid x-api-key"); } };
+    await makeWorker(badBatch).tick();
+    const j = await db.getJob(job.id);
+    expect(j.state).toBe("failed");
+    expect(j.error).toMatch(/could not start/);
+    expect(j.error).toMatch(/invalid x-api-key/);
+    expect(j.anthropic_batch_id).toBeNull();
+  });
+
+  it("the real adapter forces tool-based JSON, never the beta output_config path", () => {
+    const llm = createLlm({ apiKey: "sk-ant-test", model: "claude-haiku-4-5" });
+    const req = llm.buildBatchRequest("job:1:chunk:0", "prompt text", { type: "object" });
+    expect(req.custom_id).toBe("job:1:chunk:0");
+    expect(req.params.tool_choice).toEqual({ type: "tool", name: "emit_classification" });
+    expect(req.params.tools[0].input_schema).toEqual({ type: "object" });
+    expect(req.params.output_config).toBeUndefined();
   });
 
   it("re-adopts an awaiting_batch job after a restart", async () => {

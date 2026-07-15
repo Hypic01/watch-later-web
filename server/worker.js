@@ -123,23 +123,32 @@ export function createWorker({ db, llm, config, log = () => {}, tickMs = 2000, b
 
   async function submitBatchJob(job) {
     if (!(await guard(job))) return;
-    const videos = await db.getUnscanned(job.user_id, job.total);
-    if (!videos.length) {
-      await db.finishJob(job.id, "completed");
-      return;
+    try {
+      const videos = await db.getUnscanned(job.user_id, job.total);
+      if (!videos.length) {
+        await db.finishJob(job.id, "completed");
+        return;
+      }
+      const opts = await promptOptsFor(job.user_id);
+      const requests = [];
+      for (let i = 0; i < videos.length; i += config.chunkSize) {
+        const chunk = videos.slice(i, i + config.chunkSize);
+        requests.push(
+          llm.buildBatchRequest(`job:${job.id}:chunk:${i / config.chunkSize}`, buildClassificationPrompt(chunk, opts), RESULT_SCHEMA)
+        );
+      }
+      const batchId = await llm.submitBatch(requests);
+      await db.setJobBatch(job.id, batchId);
+      await db.releaseLease(job.id); // nothing to do until the batch ends
+      log(`job ${job.id} submitted as batch ${batchId} (${requests.length} chunks)`);
+    } catch (e) {
+      // The submit call already retried transient errors (SDK maxRetries), so a
+      // throw here is a real fault (bad key, permission, malformed request).
+      // Fail the job with the reason instead of leaving it spinning at 0 — the
+      // poll endpoint swallows the throw, so an unrecorded error is invisible.
+      log(`batch submit failed for job ${job.id}: ${e.message}`);
+      await db.finishJob(job.id, "failed", `sorting could not start: ${e.message}`.slice(0, 300));
     }
-    const opts = await promptOptsFor(job.user_id);
-    const requests = [];
-    for (let i = 0; i < videos.length; i += config.chunkSize) {
-      const chunk = videos.slice(i, i + config.chunkSize);
-      requests.push(
-        llm.buildBatchRequest(`job:${job.id}:chunk:${i / config.chunkSize}`, buildClassificationPrompt(chunk, opts), RESULT_SCHEMA)
-      );
-    }
-    const batchId = await llm.submitBatch(requests);
-    await db.setJobBatch(job.id, batchId);
-    await db.releaseLease(job.id); // nothing to do until the batch ends
-    log(`job ${job.id} submitted as batch ${batchId} (${requests.length} chunks)`);
   }
 
   // Apply batch results until done or deadline. Fully resumable: results are

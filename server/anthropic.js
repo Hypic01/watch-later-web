@@ -7,29 +7,39 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export class LlmError extends Error {}
 
+const TOOL_NAME = "emit_classification";
+
 export function createLlm({ apiKey, model, maxTokens = 4000 }) {
   const client = new Anthropic({ apiKey, maxRetries: 3 });
+
+  // Force schema-shaped JSON by requiring a single tool call. This is the
+  // stable, GA path for structured output on the Messages API. The prior
+  // output_config/json_schema path is the beta "structured outputs" feature
+  // (anthropic-beta: structured-outputs-*) — on the non-beta endpoint it 400s
+  // every call, which is why no classification ever succeeded in prod. Tool use
+  // needs no beta header and is supported by haiku, in single and batch calls.
+  const messageParams = (prompt, schema) => ({
+    model,
+    max_tokens: maxTokens,
+    tools: [{ name: TOOL_NAME, description: "Return the classification results.", input_schema: schema }],
+    tool_choice: { type: "tool", name: TOOL_NAME },
+    messages: [{ role: "user", content: prompt }],
+  });
+
+  // With a forced tool_choice the model must answer with a tool_use block whose
+  // `input` is the parsed object — no text, no JSON.parse.
+  const readToolResult = (msg) => (msg?.content || []).find((b) => b.type === "tool_use" && b.name === TOOL_NAME)?.input ?? null;
 
   return {
     async classifyChunk(prompt, schema) {
       let msg;
       try {
-        msg = await client.messages.create({
-          model,
-          max_tokens: maxTokens,
-          output_config: { format: { type: "json_schema", schema } },
-          messages: [{ role: "user", content: prompt }],
-        });
+        msg = await client.messages.create(messageParams(prompt, schema));
       } catch (e) {
         throw new LlmError(e?.message || "anthropic request failed");
       }
-      const text = msg.content?.find((b) => b.type === "text")?.text ?? "";
-      let data;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new LlmError("model returned unparseable JSON despite schema");
-      }
+      const data = readToolResult(msg);
+      if (data === null) throw new LlmError("model did not return the classification tool call");
       return {
         data,
         usage: { input: msg.usage?.input_tokens ?? 0, output: msg.usage?.output_tokens ?? 0 },
@@ -37,15 +47,7 @@ export function createLlm({ apiKey, model, maxTokens = 4000 }) {
     },
 
     buildBatchRequest(customId, prompt, schema) {
-      return {
-        custom_id: customId,
-        params: {
-          model,
-          max_tokens: maxTokens,
-          output_config: { format: { type: "json_schema", schema } },
-          messages: [{ role: "user", content: prompt }],
-        },
-      };
+      return { custom_id: customId, params: messageParams(prompt, schema) };
     },
 
     async submitBatch(requests) {
@@ -61,13 +63,7 @@ export function createLlm({ apiKey, model, maxTokens = 4000 }) {
       for await (const entry of await client.messages.batches.results(id)) {
         if (entry.result?.type === "succeeded") {
           const msg = entry.result.message;
-          const text = msg.content?.find((b) => b.type === "text")?.text ?? "";
-          let data = null;
-          try {
-            data = JSON.parse(text);
-          } catch {
-            /* fall through as failed */
-          }
+          const data = readToolResult(msg);
           yield {
             customId: entry.custom_id,
             ok: data !== null,
