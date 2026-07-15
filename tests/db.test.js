@@ -72,6 +72,19 @@ describe("imports & videos", () => {
     expect(r.added).toBe(0);
   });
 
+  it("imports a full library in bulk and dedupes on re-import across chunk boundaries", async () => {
+    // 2,700 crosses the 500-row chunk boundary five times — the size that timed
+    // out in prod when this wrote one row per query. Counts must stay exact.
+    const big = vids(2700);
+    const first = await db.upsertFromImport(U1, big, 10000);
+    expect(first).toEqual({ added: 2700, duplicates: 0, capped: 0 });
+    expect(await db.countUnscanned(U1)).toBe(2700);
+    const second = await db.upsertFromImport(U1, big, 10000);
+    expect(second.added).toBe(0);
+    expect(second.duplicates).toBe(2700);
+    expect(await db.countUnscanned(U1)).toBe(2700);
+  });
+
   it("users are fully isolated", async () => {
     await db.upsertFromImport(U1, vids(2), 10000);
     await db.upsertFromImport(U2, vids(2), 10000); // same video ids

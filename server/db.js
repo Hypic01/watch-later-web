@@ -105,37 +105,60 @@ export function createDb(q) {
     },
 
     // ---- videos ----
+    // Bulk-upserts in chunks: a full library is thousands of rows, and one query
+    // per video times out the serverless function (each round-trip to Postgres is
+    // ~tens of ms, so 2,700 sequential writes blow past the 60s limit). Chunked
+    // multi-row inserts turn that into a handful of queries. 7 params per row,
+    // 500 rows per chunk = 3,500 params, well under Postgres' 65,535 cap.
     async upsertFromImport(userId, videos, cap) {
-      let added = 0;
-      let capped = 0;
+      if (!videos.length) return { added: 0, duplicates: 0, capped: 0 };
+
       const { rows: countRows } = await q.query(
         "SELECT count(*)::int AS n FROM videos WHERE user_id = $1",
         [userId]
       );
-      let existing = countRows[0].n;
-      for (const v of videos) {
-        if (existing >= cap) {
-          const { rows } = await q.query(
-            "SELECT 1 FROM videos WHERE user_id = $1 AND video_id = $2",
-            [userId, v.id]
-          );
-          if (!rows.length) {
-            capped++;
-            continue;
-          }
+      const existing = countRows[0].n;
+
+      // The cap only bites when the incoming set could push the user over it.
+      // Existing rows always pass (they just refresh position); only NEW rows
+      // beyond the headroom are dropped. Videos arrive newest-first, so the
+      // dropped ones are the oldest.
+      let toWrite = videos;
+      let capped = 0;
+      if (existing + videos.length > cap) {
+        const { rows: idRows } = await q.query(
+          "SELECT video_id FROM videos WHERE user_id = $1",
+          [userId]
+        );
+        const known = new Set(idRows.map((r) => r.video_id));
+        let headroom = Math.max(0, cap - existing);
+        toWrite = [];
+        for (const v of videos) {
+          if (known.has(v.id)) { toWrite.push(v); continue; }
+          if (headroom > 0) { toWrite.push(v); headroom--; } else { capped++; }
         }
+      }
+
+      let added = 0;
+      const CHUNK = 500;
+      for (let i = 0; i < toWrite.length; i += CHUNK) {
+        const slice = toWrite.slice(i, i + CHUNK);
+        const tuples = [];
+        const params = [];
+        slice.forEach((v, j) => {
+          const b = j * 7;
+          tuples.push(`($${b + 1}, $${b + 2}, $${b + 3}, $${b + 4}, $${b + 5}, $${b + 6}, $${b + 7})`);
+          params.push(userId, v.id, v.title || "", v.channel || "", v.durationSeconds ?? null, v.position ?? null, v.publishedText ?? null);
+        });
         const { rows } = await q.query(
           `INSERT INTO videos (user_id, video_id, title, channel, duration_seconds, playlist_position, published_text)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           VALUES ${tuples.join(", ")}
            ON CONFLICT (user_id, video_id)
              DO UPDATE SET playlist_position = EXCLUDED.playlist_position
            RETURNING (xmax = 0) AS inserted`,
-          [userId, v.id, v.title || "", v.channel || "", v.durationSeconds ?? null, v.position ?? null, v.publishedText ?? null]
+          params
         );
-        if (rows[0]?.inserted) {
-          added++;
-          existing++;
-        }
+        for (const r of rows) if (r.inserted) added++;
       }
       return { added, duplicates: videos.length - added - capped, capped };
     },
