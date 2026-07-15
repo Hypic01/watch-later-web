@@ -98,6 +98,8 @@ export default function App() {
   const pollRef = useRef(null);
   const toastRef = useRef(null);
   const failNoticeRef = useRef(null);
+  const doneNoticeRef = useRef(null);
+  const activeSeenRef = useRef(new Set());
   const meEmail = me?.email || "";
 
   const showToast = useCallback((msg) => {
@@ -107,11 +109,26 @@ export default function App() {
   }, []);
 
   const reload = useCallback(async () => {
-    const [m, b, j] = await Promise.all([api.getMe(), api.getBoard(), api.getCurrentJob()]);
+    // Job first, then the board. The job fetch piggybacks the serverless
+    // worker tick, which can sort a small backlog within this very request —
+    // fetching in parallel let the board land before the tick finished, so
+    // freshly sorted videos didn't appear until a manual browser refresh.
+    const j = await api.getCurrentJob();
+    if (j.job && ACTIVE_STATES.has(j.job.state)) activeSeenRef.current.add(j.job.id);
+    const [m, b] = await Promise.all([api.getMe(), api.getBoard()]);
     setMe(m);
     setBoard(b);
     setJob(j.job);
     return { m, b, j: j.job };
+  }, []);
+
+  // Show the sorting bar the instant a job starts instead of waiting for the
+  // next fetch. The poll effect and the announcement effects take over from
+  // here; activeSeen marks the job as started-by-this-session so completion
+  // gets announced even if it finishes before the first poll.
+  const adoptJob = useCallback((startedJob) => {
+    activeSeenRef.current.add(startedJob.id);
+    setJob(startedJob);
   }, []);
 
   const onImported = useCallback(async (result) => {
@@ -131,10 +148,13 @@ export default function App() {
     if (locked) bits.push(`${locked.toLocaleString()} waiting behind Pro`);
     const availability = availabilitySummary(result);
     if (availability) bits.push(availability);
+    if (result.jobId && willClassify > 0) {
+      adoptJob({ id: result.jobId, state: "queued", mode: null, tier: null, total: willClassify, processed: 0, failed: 0, error: null });
+    }
     showToast(bits.join(" · "));
     setView("board");
     await reload();
-  }, [reload, showToast]);
+  }, [adoptJob, reload, showToast]);
 
   // session
   useEffect(() => {
@@ -170,18 +190,15 @@ export default function App() {
     if (!job || !ACTIVE_STATES.has(job.state)) return;
     pollRef.current = setInterval(async () => {
       const { job: fresh } = await api.getCurrentJob().catch(() => ({ job: null }));
+      if (fresh && ACTIVE_STATES.has(fresh.state)) activeSeenRef.current.add(fresh.id);
       setJob(fresh);
-      if (fresh && !ACTIVE_STATES.has(fresh.state)) {
-        clearInterval(pollRef.current);
-        const { m } = await reload();
-        if (fresh.state === "completed") {
-          showToast(`Sorted ${fresh.processed.toLocaleString()} videos into your board ✦`);
-        }
-        void m;
-      }
+      // Completion and failure handling live in the announcement effects
+      // below, so a job that finishes faster than one poll interval — or
+      // inside the very request that started it — is treated identically.
+      if (fresh && !ACTIVE_STATES.has(fresh.state)) clearInterval(pollRef.current);
     }, 3000);
     return () => clearInterval(pollRef.current);
-  }, [job?.id, job?.state, reload, showToast]);
+  }, [job?.id, job?.state]);
 
   // Announce a failed job's reason exactly once per job — including jobs that
   // failed before this client ever saw them active. A batch submit can be
@@ -191,8 +208,21 @@ export default function App() {
     if (job?.state === "failed" && job.error && failNoticeRef.current !== job.id) {
       failNoticeRef.current = job.id;
       showToast(job.error);
+      reload();
     }
-  }, [job, showToast]);
+  }, [job, reload, showToast]);
+
+  // Announce a finished sort and refresh the board exactly once per job this
+  // session started or watched. Small sorts complete inside the request that
+  // created them, so waiting for an active→done transition misses them and
+  // the board looks unchanged until a manual refresh.
+  useEffect(() => {
+    if (job?.state === "completed" && activeSeenRef.current.has(job.id) && doneNoticeRef.current !== job.id) {
+      doneNoticeRef.current = job.id;
+      showToast(`Sorted ${Number(job.processed).toLocaleString()} videos into your board ✦`);
+      reload();
+    }
+  }, [job, reload, showToast]);
 
   // Detect one configured extension ID and keep one external Port subscription.
   useEffect(() => {
@@ -545,7 +575,10 @@ export default function App() {
             ) : null}
             {lockedCount > 0 && (
               <UpgradeBand me={me} lockedCount={lockedCount} onToast={showToast}
-                onJobStarted={() => reload()} />
+                onJobStarted={(r) => adoptJob({
+                  id: r.jobId, state: "queued", mode: null, tier: null,
+                  total: Number(r.willClassify) || 0, processed: 0, failed: 0, error: null,
+                })} />
             )}
           </>
         )}

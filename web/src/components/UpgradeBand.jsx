@@ -24,8 +24,9 @@ export default function UpgradeBand({ me, lockedCount, onToast, onJobStarted }) 
   const sortRemaining = async () => {
     setBusy(true);
     try {
-      await api.classifyRemaining();
-      onJobStarted();
+      // Hand the started job up so the sorting bar appears immediately —
+      // small jobs finish before any poll would ever show one.
+      onJobStarted(await api.classifyRemaining());
     } catch (e) {
       onToast(e.message);
     } finally {
