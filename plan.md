@@ -38,6 +38,24 @@ than improvising around it.
    `GET /collector.js` and is the zero-install onboarding path + non-Chrome fallback. It also
    gets bundled into the extension at build time (MV3 forbids remote code). Changes must be
    backward-compatible.
+9. **Never use `output_config` / json_schema structured outputs.** It is a BETA Anthropic
+   feature (needs an `anthropic-beta: structured-outputs-*` header); on the stable endpoint
+   every call 400s — this exact bug meant classification never worked in prod until
+   2026-07-15. The proven pattern is a forced tool call: `tools` + `tool_choice:
+   {type:"tool", name}`, then read `tool_use.input` — exactly as `server/anthropic.js` does
+   now, in both single and batch calls. A regression test guards this; keep it green.
+10. **Batch API `custom_id` must match `^[a-zA-Z0-9_-]{1,64}$`.** Colons reject the whole
+   batch with a 400 (second never-ran-in-prod bug). Ids are `job-<id>-chunk-<n>`; a test
+   guards the pattern.
+11. **The DB is cross-country from Vercel (~65ms per query).** Never loop per-row queries for
+   multi-hundred-row work — 2,700 sequential INSERTs blew the 60s function limit; a resumed
+   batch apply that re-ran per-row no-ops went quadratic and froze. Batch multi-row
+   statements (`upsertFromImport`) or set-based skips (`pollBatchJob`'s pending set).
+12. **Small jobs finish inside the very request that first fetches them** (the serverless
+   tick piggybacks `GET /api/jobs/current`), so the client can never rely on observing an
+   active job. Give feedback optimistically — see `adoptJob` plus the ref-guarded
+   completion/failure announcer effects in `web/src/App.jsx`. Any new async feature
+   (transcript fetch, summary generation) must show its state immediately on click.
 
 Repos: hosted `~/Projects/watch-later-web` (live at watch-later-web.vercel.app; Vercel
 serverless; there is **no interval worker in prod** — jobs advance via leased,
@@ -421,9 +439,12 @@ increment; 402 `{upgrade:true}` at the wall). `GET /api/videos/:id` (detail payl
 `transcript_available`, `vault_note_path`, `description` — **never** the raw transcript).
 
 **`server/mentor.js` (new):** port the archived app's summary prompt shape
-(`{tldr, points[], watchIf}`) with a **generic, taste-profile-aware persona** (not "Joon"), via
-**structured outputs**, so the parser shrinks to a validator. `server/anthropic.js` gains
-`completeJson(prompt, schema, {model, maxTokens})` and `completeText(...)` plus fake-LLM
+(`{tldr, points[], watchIf}`) with a **generic, taste-profile-aware persona** (not "Joon"),
+via a **forced tool call** (fact #9 — NOT `output_config` structured outputs, which is beta
+and 400s; mirror how `classifyChunk` does it in `server/anthropic.js`), so the parser shrinks
+to a validator. `server/anthropic.js` gains
+`completeJson(prompt, schema, {model, maxTokens})` (tools + `tool_choice`, reads
+`tool_use.input`) and `completeText(...)` plus fake-LLM
 equivalents (deterministic fake summary/lesson) so the whole feature runs under `FAKE_LLM=1`.
 `db.addUsage` must make `jobId` **optional** (skip the `classify_jobs` update when null) so
 summary/Learn spend still lands in user + global accounting under the same `BUDGET_USD` kill
@@ -437,6 +458,8 @@ router); keep "Open on YouTube" as an overlay/menu action. TL;DR button is **alw
 with a free meter ("2 of 7 free summaries used") and an inline upgrade card at the wall. Learn
 button is **always visible with a lock** for free users → modal ("Learn is a Pro superpower.
 The librarian teaches you the video so you never have to watch it.") → existing checkout flow.
+Every async click gives feedback the moment it lands (fact #12): TL;DR shows "Fetching the
+transcript… / Summarizing…" states immediately, never a dead button waiting on a poll.
 
 **Acceptance:** `tests/captions.test.js` (extractPlayerResponse on a trimmed HTML fixture, track
 preference order, parseJson3 — port the archived cases). `tests/transcripts.test.js` (ownership,
@@ -447,6 +470,15 @@ determinism, usage recorded with a null jobId).
 ---
 
 ## M5 — Owner library migration (2,720 videos, 7 overrides, 2,129 transcripts / 54MB)
+
+**STATUS UPDATE 2026-07-15 — this milestone SHRANK.** The owner's library is already in prod
+and freshly classified (2,745 sorted via a real extension sync + batch job; $0.86). Do NOT
+migrate videos or classifications — they would be stale duplicates of better data. What
+remains of M5: carry over the **2,129 transcripts** (`transcript_source='migration'`, feeds
+TL;DR/Learn at $0 fetch cost) and the **7 manual overrides** (mapped per the rules below,
+`override_seq` server-side in `override_at` order, for the taste flywheel). The idempotency
+rules below still bind: never stomp `manual_override` rows, never downgrade `done`/`dismissed`,
+COALESCE-only updates. The chunking/mapping/endpoint design below stands otherwise.
 
 Local script → admin bulk endpoint. **Do not** do direct SQL via MCP: 54MB of transcripts as
 SQL literals bypasses every sanitizer and cannot be tested.
@@ -470,8 +502,8 @@ SQL literals bypasses every sanitizer and cannot be tested.
   Skip the archived `learn_sessions` and `summaries` (stale; regenerating costs pennies).
 - Idempotent: re-running never downgrades `done`/`dismissed` and never stomps a row with
   `manual_override = true`.
-- **Run the migration BEFORE his first full extension sync**, so the sync only refreshes
-  playlist positions and re-classification spend is $0.
+- ~~Run the migration BEFORE his first full extension sync~~ — OBE: the full sync and fresh
+  classification already happened (see status update above). Transcripts + overrides only.
 
 **Acceptance:** `tests/migrate.test.js` — category/status/topic mappings, `override_seq`
 ordering by `override_at`, idempotent replay, chunk replay safety.
@@ -484,7 +516,7 @@ ordering by `override_at`, idempotent replay, chunk replay safety.
 `web/src/lib.js`) nearly as-is. Routes `POST /api/learn/:id/start|reply|position`,
 `DELETE /api/learn/:id`. Migration `005`: `learn_sessions (user_id, video_id) PK, lesson jsonb,
 position int, messages jsonb`. Prompts from the archived `mentor.js` with a generic persona,
-lesson via structured outputs, `LEARN_MODEL` env (default haiku 4.5). Pro/admin gate.
+lesson via a forced tool call (fact #9), `LEARN_MODEL` env (default haiku 4.5). Pro/admin gate.
 
 **M7:** migration `006`: `ingest_requests (id bigserial, user_id, video_id, state CHECK
 ('queued','processing','done','failed'), error text, lease_until timestamptz, created_at,
