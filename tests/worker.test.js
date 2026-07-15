@@ -182,11 +182,60 @@ describe("batch jobs", () => {
 
   it("the real adapter forces tool-based JSON, never the beta output_config path", () => {
     const llm = createLlm({ apiKey: "sk-ant-test", model: "claude-haiku-4-5" });
-    const req = llm.buildBatchRequest("job:1:chunk:0", "prompt text", { type: "object" });
-    expect(req.custom_id).toBe("job:1:chunk:0");
+    const req = llm.buildBatchRequest("job-1-chunk-0", "prompt text", { type: "object" });
+    expect(req.custom_id).toBe("job-1-chunk-0");
     expect(req.params.tool_choice).toEqual({ type: "tool", name: "emit_classification" });
     expect(req.params.tools[0].input_schema).toEqual({ type: "object" });
     expect(req.params.output_config).toBeUndefined();
+  });
+
+  it("generated custom ids satisfy Anthropic's ^[a-zA-Z0-9_-]{1,64}$ pattern", async () => {
+    // The regression that rejected every real batch: `job:2:chunk:0` — colons
+    // are illegal in batch custom ids and fail the whole submission with a 400.
+    await db.upsertFromImport(U1, vids(60), 10000);
+    await db.createJob(U1, { mode: "batch", tier: "pro", total: 60 });
+    const inner = createFakeLlm();
+    let captured = null;
+    const spy = { ...inner, submitBatch: (reqs) => ((captured = reqs), inner.submitBatch(reqs)) };
+    await makeWorker(spy).tick();
+    expect(captured).toHaveLength(6);
+    for (const r of captured) expect(r.custom_id).toMatch(/^[a-zA-Z0-9_-]{1,64}$/);
+    expect(captured[0].custom_id).toMatch(/^job-\d+-chunk-0$/);
+  });
+
+  it("resuming a batch apply skips chunks already written and never double-counts usage", async () => {
+    // A 2,700-video job is ~110 chunks applied across many 8s poll bites.
+    // Each resume re-streams every result; without the pending-set skip it
+    // re-applies from entry 0 (quadratic → stalls) and re-records usage.
+    await db.upsertFromImport(U1, vids(60), 10000);
+    const job = await db.createJob(U1, { mode: "batch", tier: "pro", total: 60 });
+    const inner = createFakeLlm();
+    let ready = false;
+    let saves = 0;
+    let usages = 0;
+    const spyDb = {
+      ...db,
+      saveScanResult: (...a) => (saves++, db.saveScanResult(...a)),
+      addUsage: (...a) => (usages++, db.addUsage(...a)),
+    };
+    const slow = { ...inner, getBatch: async (id) => (ready ? inner.getBatch(id) : { id, processing_status: "in_progress" }) };
+    const worker = createWorker({ db: spyDb, llm: slow, config, batchPollMs: 0 });
+    await worker.tick(); // submits; batch still processing
+    expect((await db.getJob(job.id)).state).toBe("awaiting_batch");
+    // Simulate a prior partial apply: the first 3 chunks (30 videos) landed.
+    for (const v of vids(30)) {
+      await db.saveScanResult(U1, v.id, { category: "learn", reasoning: "", confidence: 0.5, topics: [] });
+    }
+    saves = 0;
+    usages = 0;
+    ready = true;
+    await worker.tick(); // resume: applies only the remaining 3 chunks
+    const j = await db.getJob(job.id);
+    expect(j.state).toBe("completed");
+    expect(j.processed).toBe(60);
+    expect(j.failed).toBe(0);
+    expect(saves).toBe(30); // only the unapplied half was written
+    expect(usages).toBe(3); // skipped chunks record no spend again
   });
 
   it("re-adopts an awaiting_batch job after a restart", async () => {

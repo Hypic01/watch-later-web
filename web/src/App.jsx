@@ -97,6 +97,7 @@ export default function App() {
   const [extensionBusy, setExtensionBusy] = useState(false);
   const pollRef = useRef(null);
   const toastRef = useRef(null);
+  const failNoticeRef = useRef(null);
   const meEmail = me?.email || "";
 
   const showToast = useCallback((msg) => {
@@ -175,14 +176,23 @@ export default function App() {
         const { m } = await reload();
         if (fresh.state === "completed") {
           showToast(`Sorted ${fresh.processed.toLocaleString()} videos into your board ✦`);
-        } else if (fresh.error) {
-          showToast(fresh.error);
         }
         void m;
       }
     }, 3000);
     return () => clearInterval(pollRef.current);
   }, [job?.id, job?.state, reload, showToast]);
+
+  // Announce a failed job's reason exactly once per job — including jobs that
+  // failed before this client ever saw them active. A batch submit can be
+  // rejected within the very poll that created the job, so without this the
+  // Sync / "Sort the rest" buttons appear to do nothing at all.
+  useEffect(() => {
+    if (job?.state === "failed" && job.error && failNoticeRef.current !== job.id) {
+      failNoticeRef.current = job.id;
+      showToast(job.error);
+    }
+  }, [job, showToast]);
 
   // Detect one configured extension ID and keep one external Port subscription.
   useEffect(() => {
@@ -527,6 +537,12 @@ export default function App() {
                 onMove={move} onDismiss={dismiss} onDone={done}
                 onOpen={() => setView(r.key)} />
             ))}
+            {job?.state === "failed" && job.error ? (
+              <div className="jobfail" role="alert">
+                <b>The last sort didn't run</b>
+                <p>{job.error}</p>
+              </div>
+            ) : null}
             {lockedCount > 0 && (
               <UpgradeBand me={me} lockedCount={lockedCount} onToast={showToast}
                 onJobStarted={() => reload()} />

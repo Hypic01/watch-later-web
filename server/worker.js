@@ -133,8 +133,10 @@ export function createWorker({ db, llm, config, log = () => {}, tickMs = 2000, b
       const requests = [];
       for (let i = 0; i < videos.length; i += config.chunkSize) {
         const chunk = videos.slice(i, i + config.chunkSize);
+        // custom_id must match ^[a-zA-Z0-9_-]{1,64}$ — colons get the whole
+        // batch rejected with a 400 before anything runs.
         requests.push(
-          llm.buildBatchRequest(`job:${job.id}:chunk:${i / config.chunkSize}`, buildClassificationPrompt(chunk, opts), RESULT_SCHEMA)
+          llm.buildBatchRequest(`job-${job.id}-chunk-${i / config.chunkSize}`, buildClassificationPrompt(chunk, opts), RESULT_SCHEMA)
         );
       }
       const batchId = await llm.submitBatch(requests);
@@ -146,13 +148,20 @@ export function createWorker({ db, llm, config, log = () => {}, tickMs = 2000, b
       // throw here is a real fault (bad key, permission, malformed request).
       // Fail the job with the reason instead of leaving it spinning at 0 — the
       // poll endpoint swallows the throw, so an unrecorded error is invisible.
-      log(`batch submit failed for job ${job.id}: ${e.message}`);
-      await db.finishJob(job.id, "failed", `sorting could not start: ${e.message}`.slice(0, 300));
+      // Prefer the API's own message over the SDK's status-line + JSON blob;
+      // this string is shown to the user.
+      const detail = e?.error?.error?.message || e?.message || "unknown error";
+      log(`batch submit failed for job ${job.id}: ${detail}`);
+      await db.finishJob(job.id, "failed", `sorting could not start: ${detail}`.slice(0, 300));
     }
   }
 
   // Apply batch results until done or deadline. Fully resumable: results are
-  // re-streamed on the next attempt and saveScanResult no-ops duplicates.
+  // re-streamed on the next attempt, and chunks whose videos are no longer
+  // unscanned are skipped up front. The skip matters at scale: a 2,700-video
+  // job is ~110 chunks and one chunk costs ~27 DB round trips to apply, so
+  // naively re-applying from entry 0 on every 8s poll bite goes quadratic and
+  // stalls around chunk 5 (it also re-records token usage on each pass).
   // Returns "waiting" while Anthropic is still processing, "applied" otherwise.
   async function pollBatchJob(job, deadline) {
     const batch = await llm.getBatch(job.anthropic_batch_id);
@@ -162,6 +171,7 @@ export function createWorker({ db, llm, config, log = () => {}, tickMs = 2000, b
     }
 
     const seen = new Set();
+    const pending = new Set(await db.unscannedIds(job.user_id));
     for await (const entry of llm.batchResults(job.anthropic_batch_id)) {
       const fresh = await db.getJob(job.id);
       if (!fresh || fresh.state !== "awaiting_batch") return; // cancelled
@@ -182,7 +192,10 @@ export function createWorker({ db, llm, config, log = () => {}, tickMs = 2000, b
         continue;
       }
       for (const r of results) seen.add(r.id);
-      await applyResults(job, results, entry.usage, { batch: true });
+      const unapplied = results.filter((r) => pending.has(r.id));
+      if (!unapplied.length) continue; // a previous attempt already applied this chunk
+      await applyResults(job, unapplied, entry.usage, { batch: true });
+      await db.updateJobProgress(job.id, { processed: results.length, failed: 0 });
       await db.renewLease(job.id, leaseSeconds);
     }
     const failed = Math.max(job.total - seen.size, 0);

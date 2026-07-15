@@ -256,6 +256,15 @@ export function createDb(q) {
       return rows[0].n;
     },
 
+    // Just the ids, for cheap "what's left" set checks (batch apply resume).
+    async unscannedIds(userId) {
+      const { rows } = await q.query(
+        "SELECT video_id FROM videos WHERE user_id = $1 AND status = 'unscanned'",
+        [userId]
+      );
+      return rows.map((r) => r.video_id);
+    },
+
     // Returns how many of the incremented videos just went permanently dead.
     async incrementAttempts(userId, ids) {
       const { rows } = await q.query(
