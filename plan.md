@@ -395,20 +395,96 @@ an admin credential. Bridge routes (M7) must use the `bridge` scope, never `impo
 
 ---
 
-## M3 — Auto-sync + Web Store
+## M3 — Auto-sync + Chrome Web Store readiness (expanded 2026-07-16, approved for Sol)
 
-`chrome.alarms.create("wll-auto-sync", {periodInMinutes: 1440})`, **default ON, daily**; popup
-select 6h / daily / off. Alarms never fire while Chrome is closed → on
-`chrome.runtime.onStartup`, if last sync is older than the interval, run a catch-up. Auto-sync
-is **always delta** and **never** opens a visible tab. Treat import 409 ("a sort is already
-running") and 429 as benign skips, not errors.
+**Why now.** The product is Pro-free-for-everyone during the beta (M8 log), but strangers
+cannot onboard: the site's extension card says "coming soon" because nobody can install an
+unpacked folder. This milestone makes the extension installable by the public and makes sync
+automatic, which is the product's core promise ("new videos are already sorted when you open
+the board").
 
-Store submission: single purpose = "sync your own YouTube Watch Later into your Watch Later
-Librarian library." Justify each permission with the sentences in M2. Privacy policy is already
-live at `/privacy.html` — add one line covering the extension (reads your Watch Later only when
-you sync; sends titles and metadata to your own account; token stored locally). All code is
-bundled, no remote code. **Exclude bulk-remove from this first submission** to keep a clean
-read-only story for review.
+### Part A — Auto-sync (code)
+
+- **Schedule storage**: `chrome.storage.sync` key `autoSyncMinutes` with values `360`
+  (every 6 hours), `1440` (daily), or `0` (off). **Default 1440, set on
+  `chrome.runtime.onInstalled`** (fresh installs get daily auto-sync ON — a locked product
+  decision).
+- **Alarm**: `chrome.alarms.create("wll-auto-sync", { periodInMinutes: <setting> })`. This is
+  a SEPARATE alarm from the existing sync-keepalive alarm in sync.js — do not conflate them.
+  Changing the setting clears and recreates the alarm; `0` clears it.
+- **Catch-up**: alarms never fire while Chrome is closed. On `chrome.runtime.onStartup`, if
+  `lastSyncAt` (already tracked in storage) is older than the configured interval, trigger one
+  sync.
+- **Auto-sync is ALWAYS delta and never opens a visible tab.** It reuses the existing
+  single-flight guard; if a sync is already running it does nothing.
+- **Benign outcomes**: import responses 409 ("a sort is already running"), 429 (rate limit),
+  and the skipped/no-new-videos path are normal, not errors — no error badge, just update
+  `lastSyncAt`/status. Not connected yet (no token stored) → skip silently.
+- **Failure visibility**: keep the existing badge behavior ("!" on real errors); auto-sync
+  must never spawn notifications or new permissions.
+- **Popup additions** (extension/popup.html + src/popup.js, vanilla JS as today): show
+  connected account + last sync time (already partially there), plus an "Auto-sync" select
+  with the three options wired to the storage key + alarm rescheduling. Keep it small and
+  keyboard-accessible (label + <select>).
+
+### Part B — Store readiness (code + docs Sol produces)
+
+- **manifest.json**: version → `1.0.0`. Description (store-visible, ≤132 chars):
+  "Sorts your own YouTube Watch Later into a tidy library with AI. One click sync; new saves
+  are filed automatically." Keep permissions EXACTLY as-is (`scripting`, `storage`, `alarms`,
+  host `https://www.youtube.com/*`) — any new permission would trigger deeper review. Icons:
+  manifest already references `icons/16.png`, `48`, `128` — **Fable provides the PNG files**
+  at `extension/icons/`; Sol just ensures the build copies them into dist and the zip, and
+  FAILS the build with a clear message if they are missing.
+- **privacy policy** (`web/public/privacy.html`): add an "The Chrome extension" section, copy
+  (house style, no dashes): "The extension reads your YouTube Watch Later list only when you
+  sync, from your own signed in browser. It sends video titles, channels, durations, and
+  caption text to your own Watch Later Librarian account and nowhere else. Your access token
+  is stored locally in your browser. The extension never reads other sites, never collects
+  browsing history, and never sells or shares data."
+- **`docs/store-listing.md`** (new; the submission kit Joon pastes from):
+  1. Single-purpose statement: "Syncs the user's own YouTube Watch Later playlist into their
+     Watch Later Librarian account so it can be organized and summarized."
+  2. Permission justifications, one paragraph each: `scripting` (injects the collector into
+     the user's own YouTube tab to read their Watch Later list and captions; MAIN world
+     required because YouTube's data is page-world only), `storage` (stores the user's own
+     API token and sync schedule), `alarms` (scheduled background sync the user controls),
+     host `youtube.com` (the only site the extension touches).
+  3. Data-usage disclosure answers (the CWS checklist): collects "website content" (video
+     titles/channels/durations/captions from the user's own account) and
+     "authentication information" (the app's own token); used ONLY for the app's single
+     purpose; transmitted to the developer's service for the user's own account; NOT sold,
+     NOT shared with third parties, NOT used for creditworthiness or lending. Remote code:
+     none (everything is bundled; MV3, no eval).
+  4. Reviewer notes paragraph: describes that a full sync and the caption fetch may briefly
+     open a muted background youtube.com tab that closes itself; nothing is downloaded or
+     re-hosted; the user watches on YouTube.
+  5. Screenshot shot-list for Joon (5 shots, 1280x800): the board with sorted rows, the
+     import panel with the extension connected, the popup with auto-sync setting, a video
+     detail with TL;DR, the landing page.
+- **Store zip**: `npm run build:extension` already emits a localhost-free zip named with the
+  version; confirm it contains icons and nothing extra (no dev-key.pem, no sourcemaps beyond
+  what we ship today).
+
+### Out of scope (do not build)
+Bulk-remove from the real Watch Later (future Pro feature; keeps this submission read-only),
+notifications, any new permissions, options page (popup is enough), Firefox/Edge ports.
+
+### Acceptance (tests — extend tests/extension-sync.test.js or a new tests/auto-sync.test.js)
+- onInstalled sets `autoSyncMinutes=1440` and creates the alarm; changing the setting
+  reschedules; `0` clears the alarm (fake chrome.alarms/storage per the existing test style).
+- onAlarm("wll-auto-sync") triggers a DELTA sync through the existing controller; a running
+  sync makes it a no-op; missing token skips silently.
+- onStartup catch-up fires exactly when `lastSyncAt` is older than the interval, and not when
+  fresh.
+- 409/429/skip import responses leave no error state and update `lastSyncAt`.
+- Build check: dist manifest version 1.0.0, externally_connectable still ONLY the production
+  origin, icons present in dist and zip (build fails loudly if icons are missing).
+- All existing suites stay green; FAKE mode untouched.
+
+### Joon's parallel checklist (no code)
+Chrome Web Store developer account ($5 one-time), screenshots per the shot-list, paste the
+listing kit, submit the zip. Review typically takes days; the console shows status.
 
 ---
 
