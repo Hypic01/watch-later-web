@@ -141,17 +141,6 @@ export function parseTimedtext(raw) {
   return null;
 }
 
-// The transcript panel's own API (youtubei/v1/get_transcript) — the request
-// behind YouTube's "Show transcript" button. It is not gated the way raw
-// timedtext URLs are, so it is the last-resort caption source. Its params is
-// a base64 protobuf whose field 1 is the video id.
-export function buildGetTranscriptParams(videoId) {
-  const id = String(videoId);
-  let bin = String.fromCharCode(0x0a, id.length);
-  for (const ch of id) bin += ch;
-  if (typeof globalThis.btoa === "function") return globalThis.btoa(bin);
-  return Buffer.from(bin, "binary").toString("base64");
-}
 
 // Walk the get_transcript response for its cue segments, in order.
 export function parseGetTranscript(json) {

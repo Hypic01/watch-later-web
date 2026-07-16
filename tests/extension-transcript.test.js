@@ -89,14 +89,16 @@ describe("extension transcript controller", () => {
   });
 
   // The tab fakes answer each MAIN-world call by shape: no args reads the
-  // page's player response; { url } is the in-page caption fetch; { params }
-  // is the transcript-panel API.
-  function smartScripting({ player = null, captionBody = "", panelBody = "" } = {}) {
+  // page's player response; { playerWaitTicks } is the in-page probe, which
+  // answers with panelBody (transcript-panel API) and/or captionBody (the
+  // player's own captured timedtext response).
+  function smartScripting({ player = null, captionBody = null, panelBody = null, detail = [] } = {}) {
     return {
       executeScript: vi.fn(async ({ args }) => {
         if (!args) return [{ frameId: 0, result: player }];
-        if (args[0]?.url) return [{ frameId: 0, result: { ok: true, status: 200, body: captionBody } }];
-        if (args[0]?.params) return [{ frameId: 0, result: { ok: true, status: 200, body: panelBody } }];
+        if (args[0]?.playerWaitTicks) {
+          return [{ frameId: 0, result: { panelBody, captionBody, detail } }];
+        }
         return [];
       }),
     };
@@ -193,7 +195,7 @@ describe("extension transcript controller", () => {
     };
     const scripting = smartScripting({
       player,
-      captionBody: "", // in-page timedtext also empty
+      captionBody: null,
       panelBody: JSON.stringify({
         actions: [{
           updateEngagementPanelAction: {
@@ -227,7 +229,7 @@ describe("extension transcript controller", () => {
     expect(tabs.remove).toHaveBeenCalledWith(7);
   });
 
-  it("reports empty captions honestly when every layer returns nothing", async () => {
+  it("reports empty captions honestly with the probe's layer detail", async () => {
     const player = playerResponse();
     const fetch = vi.fn()
       .mockResolvedValueOnce(textResponse(
@@ -238,12 +240,18 @@ describe("extension transcript controller", () => {
       create: vi.fn(async () => ({ id: 7, status: "complete" })),
       remove: vi.fn(async () => {}),
     };
-    const scripting = smartScripting({ player, captionBody: "", panelBody: "" });
+    const scripting = smartScripting({
+      player,
+      detail: ["panel 400 274b authed", "player capture empty"],
+    });
     const controller = createTranscriptController({ fetch, tabs, scripting });
 
-    await expect(controller.fetchTranscript(VIDEO_ID)).rejects.toMatchObject({
-      code: "EMPTY_TRANSCRIPT",
-    });
+    const failure = await controller.fetchTranscript(VIDEO_ID).catch((error) => error);
+    expect(failure).toMatchObject({ code: "EMPTY_TRANSCRIPT" });
+    // The layer detail rides in the message so a real-world failure tells us
+    // exactly which layer to blame without a debug build.
+    expect(failure.message).toContain("panel 400 274b authed");
+    expect(failure.message).toContain("player capture empty");
     expect(tabs.remove).toHaveBeenCalledWith(7);
   });
 

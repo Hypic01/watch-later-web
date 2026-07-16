@@ -1,5 +1,4 @@
 import {
-  buildGetTranscriptParams,
   extractPlayerResponse,
   parseGetTranscript,
   parseTimedtext,
@@ -57,6 +56,148 @@ function transcriptMetadata(playerResponse, track, captionKind) {
   };
 }
 
+// Runs INSIDE the watch page (MAIN world), fully self-contained — injected
+// functions are serialized, so nothing here may reference module scope.
+//
+// Layer findings that shaped this (2026-07-15, verified in a live browser):
+// - Raw timedtext URLs return an EMPTY 200 everywhere without the player's
+//   `pot` proof token — even same-origin from inside the page. Dead end.
+// - get_transcript 400s ("Precondition check failed") without the SAPISID
+//   Authorization header YouTube's own JS attaches, and needs the params blob
+//   the page embeds in ytInitialData — hand-built params are not accepted.
+// - The most reliable source is the player itself: enable captions on the
+//   muted player and capture its own token-bearing timedtext response.
+export const runTranscriptProbe = async (arg) => {
+  const out = { panelBody: null, captionBody: null, detail: [] };
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  try {
+    // ---- Layer A: the transcript panel API, requested the way the page would.
+    try {
+      let params = null;
+      const walk = (value, seen) => {
+        if (!value || typeof value !== "object" || seen.has(value) || params) return;
+        seen.add(value);
+        if (value.getTranscriptEndpoint && typeof value.getTranscriptEndpoint.params === "string") {
+          params = value.getTranscriptEndpoint.params;
+          return;
+        }
+        for (const child of Object.values(value)) walk(child, seen);
+      };
+      walk(window.ytInitialData || {}, new WeakSet());
+      const cfg = window.ytcfg && typeof window.ytcfg.get === "function" ? window.ytcfg : null;
+      const apiKey = cfg ? cfg.get("INNERTUBE_API_KEY") : null;
+      const context = cfg ? cfg.get("INNERTUBE_CONTEXT") : null;
+      if (params && apiKey && context) {
+        const cookieValue = (name) => (document.cookie.match(new RegExp("(?:^|; )" + name + "=([^;]*)")) || [])[1] || null;
+        const sapisid = cookieValue("SAPISID") || cookieValue("__Secure-3PAPISID");
+        const headers = { "content-type": "application/json", "x-youtube-client-name": "1" };
+        if (context.client && context.client.clientVersion) headers["x-youtube-client-version"] = context.client.clientVersion;
+        if (context.client && context.client.visitorData) headers["x-goog-visitor-id"] = context.client.visitorData;
+        if (sapisid && window.crypto && window.crypto.subtle) {
+          const ts = Math.floor(Date.now() / 1000);
+          const digest = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(ts + " " + sapisid + " " + location.origin));
+          const hex = Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
+          headers.authorization = "SAPISIDHASH " + ts + "_" + hex;
+          headers["x-origin"] = location.origin;
+        }
+        const response = await fetch("/youtubei/v1/get_transcript?key=" + encodeURIComponent(apiKey) + "&prettyPrint=false", {
+          method: "POST",
+          credentials: "include",
+          headers,
+          body: JSON.stringify({ context, params }),
+        });
+        const body = await response.text();
+        out.detail.push("panel " + response.status + " " + body.length + "b" + (headers.authorization ? " authed" : " anon"));
+        if (response.ok && body) {
+          out.panelBody = body;
+          return out;
+        }
+      } else {
+        out.detail.push("panel skipped (" + [params ? "" : "no params", apiKey ? "" : "no key", context ? "" : "no context"].filter(Boolean).join(", ") + ")");
+      }
+    } catch (error) {
+      out.detail.push("panel error " + String((error && error.message) || error).slice(0, 60));
+    }
+
+    // ---- Layer B: make the player fetch captions itself and capture them.
+    const captured = { url: null, body: null };
+    const origFetch = window.fetch;
+    const OrigOpen = XMLHttpRequest.prototype.open;
+    const OrigSend = XMLHttpRequest.prototype.send;
+    window.fetch = function (input, init) {
+      const result = origFetch.apply(this, arguments);
+      try {
+        const url = String(typeof input === "object" && input !== null ? input.url : input);
+        if (url.indexOf("/api/timedtext") >= 0) {
+          captured.url = url;
+          result.then((res) => res.clone().text()).then((text) => {
+            if (text) captured.body = text;
+          }).catch(() => {});
+        }
+      } catch { /* capture must never break the page */ }
+      return result;
+    };
+    XMLHttpRequest.prototype.open = function (method, url) {
+      this.__wllUrl = String(url);
+      return OrigOpen.apply(this, arguments);
+    };
+    XMLHttpRequest.prototype.send = function () {
+      if (this.__wllUrl && this.__wllUrl.indexOf("/api/timedtext") >= 0) {
+        captured.url = this.__wllUrl;
+        this.addEventListener("load", () => {
+          if (this.responseText) captured.body = this.responseText;
+        });
+      }
+      return OrigSend.apply(this, arguments);
+    };
+    try {
+      const player = document.getElementById("movie_player");
+      if (!player) {
+        out.detail.push("no player");
+      } else {
+        try { if (player.mute) player.mute(); } catch { /* keep going */ }
+        try { if (player.loadModule) player.loadModule("captions"); } catch { /* keep going */ }
+        try { if (player.setOption) player.setOption("captions", "reload", true); } catch { /* keep going */ }
+        try { if (player.playVideo) player.playVideo(); } catch { /* keep going */ }
+        try {
+          const ccButton = document.querySelector(".ytp-subtitles-button");
+          if (ccButton && ccButton.getAttribute("aria-pressed") !== "true") ccButton.click();
+        } catch { /* keep going */ }
+        const ticks = Number(arg && arg.playerWaitTicks) || 24;
+        for (let i = 0; i < ticks; i += 1) {
+          if (captured.body) break;
+          await sleep(500);
+        }
+        if (!captured.body && captured.url) {
+          try {
+            const refetch = await origFetch(captured.url, { credentials: "include" });
+            const text = await refetch.text();
+            out.detail.push("captured-url refetch " + refetch.status + " " + text.length + "b");
+            if (text) captured.body = text;
+          } catch {
+            out.detail.push("captured-url refetch failed");
+          }
+        }
+        try { if (player.pauseVideo) player.pauseVideo(); } catch { /* done anyway */ }
+      }
+    } finally {
+      window.fetch = origFetch;
+      XMLHttpRequest.prototype.open = OrigOpen;
+      XMLHttpRequest.prototype.send = OrigSend;
+    }
+    if (captured.body) {
+      out.captionBody = captured.body;
+      out.detail.push("player captured " + captured.body.length + "b");
+    } else {
+      out.detail.push(captured.url ? "player url seen, body empty" : "player capture empty");
+    }
+    return out;
+  } catch (error) {
+    out.detail.push("probe crashed " + String((error && error.message) || error).slice(0, 60));
+    return out;
+  }
+};
+
 export function createTranscriptController({
   fetch: fetchImpl = globalThis.fetch,
   tabs,
@@ -64,7 +205,6 @@ export function createTranscriptController({
   extractPlayerResponseImpl = extractPlayerResponse,
   pickCaptionTrackImpl = pickCaptionTrack,
   parseTimedtextImpl = parseTimedtext,
-  buildGetTranscriptParamsImpl = buildGetTranscriptParams,
   parseGetTranscriptImpl = parseGetTranscript,
   setTimeout: setTimeoutImpl = globalThis.setTimeout?.bind(globalThis),
   clearTimeout: clearTimeoutImpl = globalThis.clearTimeout?.bind(globalThis),
@@ -125,41 +265,6 @@ export function createTranscriptController({
 
   const readPlayerResponse = () => window.ytInitialPlayerResponse || null;
 
-  // Runs inside the page, so the request is same-origin with full page
-  // context — the timedtext endpoint returns an empty 200 to anything else.
-  const fetchTextInPage = async (arg) => {
-    try {
-      const response = await fetch(arg.url, { credentials: "include" });
-      return { ok: response.ok, status: response.status, body: await response.text() };
-    } catch (error) {
-      return { ok: false, status: 0, body: "", error: String(error) };
-    }
-  };
-
-  // The transcript panel's own API, called with the page's live ytcfg.
-  const fetchPanelTranscriptInPage = async (arg) => {
-    try {
-      const get = (key) => (window.ytcfg && typeof window.ytcfg.get === "function"
-        ? window.ytcfg.get(key)
-        : undefined);
-      const apiKey = get("INNERTUBE_API_KEY");
-      const context = get("INNERTUBE_CONTEXT");
-      if (!apiKey || !context) return { ok: false, status: 0, body: "", error: "NO_YTCFG" };
-      const response = await fetch(
-        `/youtubei/v1/get_transcript?key=${encodeURIComponent(apiKey)}&prettyPrint=false`,
-        {
-          method: "POST",
-          credentials: "include",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ context, params: arg.params }),
-        },
-      );
-      return { ok: response.ok, status: response.status, body: await response.text() };
-    } catch (error) {
-      return { ok: false, status: 0, body: "", error: String(error) };
-    }
-  };
-
   async function directPlayerResponse(videoId) {
     try {
       const response = await fetchImpl(watchUrl(videoId), { credentials: "include" });
@@ -171,8 +276,8 @@ export function createTranscriptController({
   }
 
   // Fast path: fetch the caption file from the service worker. YouTube
-  // increasingly answers this with an empty 200 (the request is cross-origin
-  // from the extension), in which case the tab path below takes over.
+  // usually answers this with an empty 200 now, but it is one cheap request
+  // and the parser treats emptiness as "not served".
   async function captionsViaWorker(track) {
     if (!track?.baseUrl) return null;
     try {
@@ -197,9 +302,9 @@ export function createTranscriptController({
       return { ok: true, transcript: workerTranscript, ...transcriptMetadata(directResponse, directTrack) };
     }
 
-    // Tab path: one background tab serves every remaining attempt — reading
-    // the page's own player response, fetching captions with page context,
-    // and finally YouTube's transcript-panel API.
+    // Tab path: one background tab, one in-page probe that first asks the
+    // transcript-panel API the way the page itself would, then drives the
+    // muted player into fetching captions and captures its response.
     let tab = null;
     try {
       tab = await tabs.create({ url: watchUrl(normalizedId), active: false });
@@ -212,28 +317,18 @@ export function createTranscriptController({
       try {
         pageResponse = await inTab(tab.id, readPlayerResponse);
       } catch {
-        // The panel API below can still succeed without a player response.
+        // The probe below can still succeed without a player response.
       }
       const playerResponse = pageResponse || directResponse;
       const track = pickCaptionTrackImpl(captionTracks(playerResponse), ["en", "ko"]);
 
-      if (track?.baseUrl) {
-        const fetched = await inTab(tab.id, fetchTextInPage, [{ url: captionUrl(track.baseUrl) }]);
-        const transcript = fetched?.ok ? parseTimedtextImpl(fetched.body) : null;
-        if (transcript) {
-          return { ok: true, transcript, ...transcriptMetadata(playerResponse, track) };
-        }
-      }
+      const probe = (await inTab(tab.id, runTranscriptProbe, [{ playerWaitTicks: 24 }])) || { detail: ["probe returned nothing"] };
 
-      const params = buildGetTranscriptParamsImpl(normalizedId);
-      const panel = await inTab(tab.id, fetchPanelTranscriptInPage, [{ params }]);
-      if (panel?.ok && panel.body) {
+      if (probe.panelBody) {
         let panelJson = null;
         try {
-          panelJson = JSON.parse(panel.body);
-        } catch {
-          // Treated as no transcript below.
-        }
+          panelJson = JSON.parse(probe.panelBody);
+        } catch { /* fall through to the caption body */ }
         const transcript = panelJson ? parseGetTranscriptImpl(panelJson) : null;
         if (transcript) {
           return {
@@ -243,13 +338,20 @@ export function createTranscriptController({
           };
         }
       }
+      if (probe.captionBody) {
+        const transcript = parseTimedtextImpl(probe.captionBody);
+        if (transcript) {
+          return { ok: true, transcript, ...transcriptMetadata(playerResponse, track) };
+        }
+      }
 
+      const detail = Array.isArray(probe.detail) && probe.detail.length ? probe.detail.join("; ") : "no detail";
       if (!track) {
         throw new TranscriptFetchError("NO_CAPTIONS", "This video has no captions available.");
       }
       throw new TranscriptFetchError(
         "EMPTY_TRANSCRIPT",
-        "YouTube would not hand over captions for this video. Try again in a moment.",
+        `YouTube would not hand over captions for this video (${detail}).`,
       );
     } catch (error) {
       if (error instanceof TranscriptFetchError) throw error;

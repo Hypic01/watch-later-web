@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildGetTranscriptParams,
   extractPlayerResponse,
   parseGetTranscript,
   parseJson3,
@@ -101,14 +100,6 @@ describe("parseTimedtext", () => {
 });
 
 describe("get_transcript panel API pieces", () => {
-  it("builds the params protobuf: field 1 wraps the video id", () => {
-    const params = buildGetTranscriptParams("dQw4w9WgXcQ");
-    const decoded = Buffer.from(params, "base64");
-    expect(decoded[0]).toBe(0x0a);
-    expect(decoded[1]).toBe(11);
-    expect(decoded.slice(2).toString("binary")).toBe("dQw4w9WgXcQ");
-  });
-
   it("collects cue segments in order from a panel response", () => {
     const response = {
       actions: [{
