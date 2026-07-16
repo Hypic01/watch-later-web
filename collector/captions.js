@@ -106,3 +106,73 @@ export function parseJson3(raw) {
   }
   return parts.join(' ').replace(/\s+/g, ' ').trim()
 }
+
+const XML_ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
+
+function decodeEntities(text) {
+  return String(text)
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCodePoint(Number(dec)))
+    .replace(/&(amp|lt|gt|quot|apos);/g, (_, name) => XML_ENTITIES[name]);
+}
+
+// Timedtext responses arrive as json3, as legacy XML, or — when YouTube
+// distrusts the request — as an EMPTY 200. An empty body must read as "no
+// captions served", never as a parse crash.
+export function parseTimedtext(raw) {
+  const text = String(raw ?? "").replace(/^\uFEFF/, "").replace(/^\)\]\}'\n?/, "").trim();
+  if (!text) return null;
+  if (text[0] === "{") {
+    try {
+      return parseJson3(text) || null;
+    } catch {
+      return null;
+    }
+  }
+  if (text[0] === "<") {
+    const parts = [];
+    for (const match of text.matchAll(/<(?:text|p)\b[^>]*>([\s\S]*?)<\/(?:text|p)>/g)) {
+      const cue = decodeEntities(match[1].replace(/<[^>]+>/g, "")).trim();
+      if (cue) parts.push(cue);
+    }
+    const joined = parts.join(" ").replace(/\s+/g, " ").trim();
+    return joined || null;
+  }
+  return null;
+}
+
+// The transcript panel's own API (youtubei/v1/get_transcript) — the request
+// behind YouTube's "Show transcript" button. It is not gated the way raw
+// timedtext URLs are, so it is the last-resort caption source. Its params is
+// a base64 protobuf whose field 1 is the video id.
+export function buildGetTranscriptParams(videoId) {
+  const id = String(videoId);
+  let bin = String.fromCharCode(0x0a, id.length);
+  for (const ch of id) bin += ch;
+  if (typeof globalThis.btoa === "function") return globalThis.btoa(bin);
+  return Buffer.from(bin, "binary").toString("base64");
+}
+
+// Walk the get_transcript response for its cue segments, in order.
+export function parseGetTranscript(json) {
+  const parts = [];
+  const visited = new WeakSet();
+  const cueText = (snippet) => {
+    if (typeof snippet?.simpleText === "string") return snippet.simpleText;
+    if (Array.isArray(snippet?.runs)) return snippet.runs.map((run) => run?.text || "").join("");
+    return "";
+  };
+  const walk = (value) => {
+    if (!value || typeof value !== "object" || visited.has(value)) return;
+    visited.add(value);
+    if (value.transcriptSegmentRenderer) {
+      const cue = cueText(value.transcriptSegmentRenderer.snippet).trim();
+      if (cue) parts.push(cue);
+      return;
+    }
+    for (const child of Object.values(value)) walk(child);
+  };
+  walk(json);
+  const joined = parts.join(" ").replace(/\s+/g, " ").trim();
+  return joined || null;
+}

@@ -1,4 +1,4 @@
-import { extractPlayerResponse, pickCaptionTrack, parseJson3 } from "../collector/captions.js";
+import { extractPlayerResponse, pickCaptionTrack, parseTimedtext } from "../collector/captions.js";
 
 export class TranscriptFetchError extends Error {}
 
@@ -35,7 +35,7 @@ export function createTranscriptFetcher({
         if (captions && "ok" in captions && !captions.ok) {
           throw new TranscriptFetchError(`caption request returned ${captions.status}`);
         }
-        const transcript = parseJson3(await captions.text());
+        const transcript = parseTimedtext(await captions.text());
         if (!transcript) throw new TranscriptFetchError("caption track was empty");
 
         const details = player.videoDetails || {};

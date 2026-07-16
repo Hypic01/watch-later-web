@@ -1,6 +1,8 @@
 import {
+  buildGetTranscriptParams,
   extractPlayerResponse,
-  parseJson3,
+  parseGetTranscript,
+  parseTimedtext,
   pickCaptionTrack,
 } from "../../collector/captions.js";
 
@@ -28,13 +30,6 @@ function captionTracks(playerResponse) {
   return Array.isArray(tracks) ? tracks : [];
 }
 
-function needsMainWorldFallback(playerResponse) {
-  if (!playerResponse) return true;
-  if (captionTracks(playerResponse).length > 0) return false;
-  const status = String(playerResponse?.playabilityStatus?.status || "").toUpperCase();
-  return Boolean(status && status !== "OK");
-}
-
 function captionUrl(baseUrl) {
   const separator = String(baseUrl).includes("?") ? "&" : "?";
   return `${baseUrl}${separator}fmt=json3`;
@@ -47,13 +42,13 @@ function textFromRuns(value) {
   return text || null;
 }
 
-function transcriptMetadata(playerResponse, track) {
+function transcriptMetadata(playerResponse, track, captionKind) {
   const details = playerResponse?.videoDetails || {};
   const microformat = playerResponse?.microformat?.playerMicroformatRenderer || {};
   const seconds = Number(details.lengthSeconds);
   return {
     source: "extension",
-    captionKind: track?.kind === "asr" ? "asr" : "manual",
+    captionKind: captionKind || (track?.kind === "asr" ? "asr" : "manual"),
     language: track?.languageCode || null,
     description: details.shortDescription || textFromRuns(microformat.description) || null,
     uploadDate: microformat.uploadDate || microformat.publishDate || null,
@@ -68,7 +63,9 @@ export function createTranscriptController({
   scripting,
   extractPlayerResponseImpl = extractPlayerResponse,
   pickCaptionTrackImpl = pickCaptionTrack,
-  parseJson3Impl = parseJson3,
+  parseTimedtextImpl = parseTimedtext,
+  buildGetTranscriptParamsImpl = buildGetTranscriptParams,
+  parseGetTranscriptImpl = parseGetTranscript,
   setTimeout: setTimeoutImpl = globalThis.setTimeout?.bind(globalThis),
   clearTimeout: clearTimeoutImpl = globalThis.clearTimeout?.bind(globalThis),
   tabTimeoutMs = DEFAULT_TAB_TIMEOUT_MS,
@@ -116,20 +113,144 @@ export function createTranscriptController({
     });
   }
 
-  async function playerResponseFromTab(videoId) {
+  async function inTab(tabId, func, args) {
+    const results = await scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func,
+      ...(args ? { args } : {}),
+    });
+    return (results || []).find((entry) => entry && "result" in entry)?.result ?? null;
+  }
+
+  const readPlayerResponse = () => window.ytInitialPlayerResponse || null;
+
+  // Runs inside the page, so the request is same-origin with full page
+  // context — the timedtext endpoint returns an empty 200 to anything else.
+  const fetchTextInPage = async (arg) => {
+    try {
+      const response = await fetch(arg.url, { credentials: "include" });
+      return { ok: response.ok, status: response.status, body: await response.text() };
+    } catch (error) {
+      return { ok: false, status: 0, body: "", error: String(error) };
+    }
+  };
+
+  // The transcript panel's own API, called with the page's live ytcfg.
+  const fetchPanelTranscriptInPage = async (arg) => {
+    try {
+      const get = (key) => (window.ytcfg && typeof window.ytcfg.get === "function"
+        ? window.ytcfg.get(key)
+        : undefined);
+      const apiKey = get("INNERTUBE_API_KEY");
+      const context = get("INNERTUBE_CONTEXT");
+      if (!apiKey || !context) return { ok: false, status: 0, body: "", error: "NO_YTCFG" };
+      const response = await fetch(
+        `/youtubei/v1/get_transcript?key=${encodeURIComponent(apiKey)}&prettyPrint=false`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ context, params: arg.params }),
+        },
+      );
+      return { ok: response.ok, status: response.status, body: await response.text() };
+    } catch (error) {
+      return { ok: false, status: 0, body: "", error: String(error) };
+    }
+  };
+
+  async function directPlayerResponse(videoId) {
+    try {
+      const response = await fetchImpl(watchUrl(videoId), { credentials: "include" });
+      if (!response?.ok) return null;
+      return extractPlayerResponseImpl(await response.text());
+    } catch {
+      return null;
+    }
+  }
+
+  // Fast path: fetch the caption file from the service worker. YouTube
+  // increasingly answers this with an empty 200 (the request is cross-origin
+  // from the extension), in which case the tab path below takes over.
+  async function captionsViaWorker(track) {
+    if (!track?.baseUrl) return null;
+    try {
+      const response = await fetchImpl(captionUrl(track.baseUrl), { credentials: "include" });
+      if (!response?.ok) return null;
+      return parseTimedtextImpl(await response.text());
+    } catch {
+      return null;
+    }
+  }
+
+  async function fetchTranscript(videoId) {
+    const normalizedId = String(videoId || "").trim();
+    if (!VIDEO_ID_RE.test(normalizedId)) {
+      throw new TranscriptFetchError("INVALID_VIDEO_ID", "The video ID is invalid.");
+    }
+
+    const directResponse = await directPlayerResponse(normalizedId);
+    const directTrack = pickCaptionTrackImpl(captionTracks(directResponse), ["en", "ko"]);
+    const workerTranscript = await captionsViaWorker(directTrack);
+    if (workerTranscript) {
+      return { ok: true, transcript: workerTranscript, ...transcriptMetadata(directResponse, directTrack) };
+    }
+
+    // Tab path: one background tab serves every remaining attempt — reading
+    // the page's own player response, fetching captions with page context,
+    // and finally YouTube's transcript-panel API.
     let tab = null;
     try {
-      tab = await tabs.create({ url: watchUrl(videoId), active: false });
+      tab = await tabs.create({ url: watchUrl(normalizedId), active: false });
       if (!tab?.id) {
         throw new TranscriptFetchError("TAB_OPEN_FAILED", "YouTube could not be opened for captions.");
       }
       await waitForTab(tab);
-      const results = await scripting.executeScript({
-        target: { tabId: tab.id },
-        world: "MAIN",
-        func: () => window.ytInitialPlayerResponse || null,
-      });
-      return (results || []).find((entry) => entry?.result)?.result || null;
+
+      let pageResponse = null;
+      try {
+        pageResponse = await inTab(tab.id, readPlayerResponse);
+      } catch {
+        // The panel API below can still succeed without a player response.
+      }
+      const playerResponse = pageResponse || directResponse;
+      const track = pickCaptionTrackImpl(captionTracks(playerResponse), ["en", "ko"]);
+
+      if (track?.baseUrl) {
+        const fetched = await inTab(tab.id, fetchTextInPage, [{ url: captionUrl(track.baseUrl) }]);
+        const transcript = fetched?.ok ? parseTimedtextImpl(fetched.body) : null;
+        if (transcript) {
+          return { ok: true, transcript, ...transcriptMetadata(playerResponse, track) };
+        }
+      }
+
+      const params = buildGetTranscriptParamsImpl(normalizedId);
+      const panel = await inTab(tab.id, fetchPanelTranscriptInPage, [{ params }]);
+      if (panel?.ok && panel.body) {
+        let panelJson = null;
+        try {
+          panelJson = JSON.parse(panel.body);
+        } catch {
+          // Treated as no transcript below.
+        }
+        const transcript = panelJson ? parseGetTranscriptImpl(panelJson) : null;
+        if (transcript) {
+          return {
+            ok: true,
+            transcript,
+            ...transcriptMetadata(playerResponse, track, track ? undefined : "panel"),
+          };
+        }
+      }
+
+      if (!track) {
+        throw new TranscriptFetchError("NO_CAPTIONS", "This video has no captions available.");
+      }
+      throw new TranscriptFetchError(
+        "EMPTY_TRANSCRIPT",
+        "YouTube would not hand over captions for this video. Try again in a moment.",
+      );
     } catch (error) {
       if (error instanceof TranscriptFetchError) throw error;
       throw new TranscriptFetchError(
@@ -150,76 +271,6 @@ export function createTranscriptController({
         }
       }
     }
-  }
-
-  async function directPlayerResponse(videoId) {
-    try {
-      const response = await fetchImpl(watchUrl(videoId), { credentials: "include" });
-      if (!response?.ok) return null;
-      return extractPlayerResponseImpl(await response.text());
-    } catch {
-      return null;
-    }
-  }
-
-  async function fetchTranscript(videoId) {
-    const normalizedId = String(videoId || "").trim();
-    if (!VIDEO_ID_RE.test(normalizedId)) {
-      throw new TranscriptFetchError("INVALID_VIDEO_ID", "The video ID is invalid.");
-    }
-
-    let playerResponse = await directPlayerResponse(normalizedId);
-    if (needsMainWorldFallback(playerResponse)) {
-      playerResponse = await playerResponseFromTab(normalizedId);
-    }
-    if (!playerResponse) {
-      throw new TranscriptFetchError(
-        "PLAYER_RESPONSE_UNAVAILABLE",
-        "YouTube did not expose captions for this video.",
-      );
-    }
-
-    const track = pickCaptionTrackImpl(captionTracks(playerResponse), ["en", "ko"]);
-    if (!track?.baseUrl) {
-      throw new TranscriptFetchError("NO_CAPTIONS", "This video has no captions available.");
-    }
-
-    let response;
-    try {
-      response = await fetchImpl(captionUrl(track.baseUrl), { credentials: "include" });
-    } catch (error) {
-      throw new TranscriptFetchError(
-        "CAPTION_FETCH_FAILED",
-        "YouTube did not return captions for this video.",
-        error,
-      );
-    }
-    if (!response?.ok) {
-      throw new TranscriptFetchError(
-        "CAPTION_FETCH_FAILED",
-        "YouTube did not return captions for this video.",
-      );
-    }
-
-    let transcript;
-    try {
-      transcript = parseJson3Impl(await response.text());
-    } catch (error) {
-      throw new TranscriptFetchError(
-        "CAPTION_PARSE_FAILED",
-        "YouTube returned captions we could not read.",
-        error,
-      );
-    }
-    if (!transcript) {
-      throw new TranscriptFetchError("EMPTY_TRANSCRIPT", "YouTube returned empty captions for this video.");
-    }
-
-    return {
-      ok: true,
-      transcript,
-      ...transcriptMetadata(playerResponse, track),
-    };
   }
 
   function handleTabUpdated(tabId, changeInfo = {}, tab = null) {

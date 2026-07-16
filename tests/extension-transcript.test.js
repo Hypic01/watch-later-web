@@ -88,13 +88,24 @@ describe("extension transcript controller", () => {
     expect(scripting.executeScript).not.toHaveBeenCalled();
   });
 
-  it("falls back to a background tab and reads player state in MAIN world", async () => {
+  // The tab fakes answer each MAIN-world call by shape: no args reads the
+  // page's player response; { url } is the in-page caption fetch; { params }
+  // is the transcript-panel API.
+  function smartScripting({ player = null, captionBody = "", panelBody = "" } = {}) {
+    return {
+      executeScript: vi.fn(async ({ args }) => {
+        if (!args) return [{ frameId: 0, result: player }];
+        if (args[0]?.url) return [{ frameId: 0, result: { ok: true, status: 200, body: captionBody } }];
+        if (args[0]?.params) return [{ frameId: 0, result: { ok: true, status: 200, body: panelBody } }];
+        return [];
+      }),
+    };
+  }
+
+  it("falls back to a background tab and fetches captions with page context", async () => {
     const player = playerResponse({ trackKind: "asr" });
     const fetch = vi.fn()
-      .mockResolvedValueOnce(textResponse("<html>attestation required</html>"))
-      .mockResolvedValueOnce(textResponse(JSON.stringify({
-        events: [{ segs: [{ utf8: "Recovered captions." }] }],
-      })));
+      .mockResolvedValueOnce(textResponse("<html>attestation required</html>"));
     let markTabCreated;
     const tabCreated = new Promise((resolve) => { markTabCreated = resolve; });
     const tabs = {
@@ -104,9 +115,10 @@ describe("extension transcript controller", () => {
       }),
       remove: vi.fn(async () => {}),
     };
-    const scripting = {
-      executeScript: vi.fn(async () => [{ frameId: 0, result: player }]),
-    };
+    const scripting = smartScripting({
+      player,
+      captionBody: JSON.stringify({ events: [{ segs: [{ utf8: "Recovered captions." }] }] }),
+    });
     const controller = createTranscriptController({ fetch, tabs, scripting });
 
     const pending = controller.fetchTranscript(VIDEO_ID);
@@ -139,6 +151,100 @@ describe("extension transcript controller", () => {
       func: expect.any(Function),
     }));
     expect(tabs.remove).toHaveBeenCalledWith(42);
+  });
+
+  it("opens the tab when the worker caption fetch gets YouTube's empty 200", async () => {
+    // The exact production failure: the watch page parses fine and a track
+    // exists, but timedtext answers the extension with a zero-byte 200.
+    const player = playerResponse();
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(textResponse(
+        `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};</script></html>`,
+      ))
+      .mockResolvedValueOnce(textResponse("")); // worker timedtext: empty 200
+    const tabs = {
+      create: vi.fn(async () => ({ id: 7, status: "complete" })),
+      remove: vi.fn(async () => {}),
+    };
+    const scripting = smartScripting({
+      player,
+      captionBody: JSON.stringify({ events: [{ segs: [{ utf8: "Page context wins." }] }] }),
+    });
+    const controller = createTranscriptController({ fetch, tabs, scripting });
+
+    await expect(controller.fetchTranscript(VIDEO_ID)).resolves.toMatchObject({
+      ok: true,
+      transcript: "Page context wins.",
+      captionKind: "manual",
+    });
+    expect(tabs.remove).toHaveBeenCalledWith(7);
+  });
+
+  it("falls through to the transcript panel API when caption URLs stay empty", async () => {
+    const player = playerResponse();
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(textResponse(
+        `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};</script></html>`,
+      ))
+      .mockResolvedValueOnce(textResponse(""));
+    const tabs = {
+      create: vi.fn(async () => ({ id: 7, status: "complete" })),
+      remove: vi.fn(async () => {}),
+    };
+    const scripting = smartScripting({
+      player,
+      captionBody: "", // in-page timedtext also empty
+      panelBody: JSON.stringify({
+        actions: [{
+          updateEngagementPanelAction: {
+            content: {
+              transcriptRenderer: {
+                content: {
+                  transcriptSearchPanelRenderer: {
+                    body: {
+                      transcriptSegmentListRenderer: {
+                        initialSegments: [
+                          { transcriptSegmentRenderer: { snippet: { runs: [{ text: "Panel " }, { text: "saves the day." }] } } },
+                          { transcriptSegmentRenderer: { snippet: { simpleText: "Second cue." } } },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }],
+      }),
+    });
+    const controller = createTranscriptController({ fetch, tabs, scripting });
+
+    await expect(controller.fetchTranscript(VIDEO_ID)).resolves.toMatchObject({
+      ok: true,
+      transcript: "Panel saves the day. Second cue.",
+      captionKind: "manual",
+    });
+    expect(tabs.remove).toHaveBeenCalledWith(7);
+  });
+
+  it("reports empty captions honestly when every layer returns nothing", async () => {
+    const player = playerResponse();
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(textResponse(
+        `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(player)};</script></html>`,
+      ))
+      .mockResolvedValueOnce(textResponse(""));
+    const tabs = {
+      create: vi.fn(async () => ({ id: 7, status: "complete" })),
+      remove: vi.fn(async () => {}),
+    };
+    const scripting = smartScripting({ player, captionBody: "", panelBody: "" });
+    const controller = createTranscriptController({ fetch, tabs, scripting });
+
+    await expect(controller.fetchTranscript(VIDEO_ID)).rejects.toMatchObject({
+      code: "EMPTY_TRANSCRIPT",
+    });
+    expect(tabs.remove).toHaveBeenCalledWith(7);
   });
 
   it("always closes a fallback tab when MAIN world injection fails", async () => {
