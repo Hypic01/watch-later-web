@@ -19,6 +19,7 @@ export function loadConfig(env = process.env) {
     batchThreshold: Number(env.BATCH_THRESHOLD) || 500,
 
     freeVideoQuota: Number(env.FREE_VIDEO_QUOTA) || 100,
+    freeSummaryQuota: Number(env.FREE_SUMMARY_QUOTA) || 7,
     budgetUsd: Number(env.BUDGET_USD) || 100,
     importsPerHour: Number(env.IMPORTS_PER_HOUR) || 5,
 

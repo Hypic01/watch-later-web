@@ -203,6 +203,94 @@ export function createDb(q) {
       return rows[0] || null;
     },
 
+    // Detail reads stay separate from LIST_COLUMNS so board and cleanup
+    // payloads can never accidentally include a transcript. vault_note_path
+    // belongs to M5; expose its M4 API placeholder without adding that column
+    // ahead of its migration.
+    async getVideoDetail(userId, videoId) {
+      const { rows } = await q.query(
+        `SELECT v.video_id AS id, v.title, v.channel, v.duration_seconds,
+           v.playlist_position, v.published_text, v.category, v.reasoning,
+           v.confidence, v.topics, v.status, v.manual_override, v.override_from,
+           v.transcript_available, v.upload_date, v.description,
+           NULL::text AS vault_note_path, s.summary
+         FROM videos v
+         LEFT JOIN summaries s ON s.user_id = v.user_id AND s.video_id = v.video_id
+         WHERE v.user_id = $1 AND v.video_id = $2`,
+        [userId, videoId]
+      );
+      return rows[0] || null;
+    },
+
+    // Server-only read for summary generation. Never return this row directly
+    // from an HTTP endpoint because it contains the raw transcript.
+    async getVideoTranscript(userId, videoId) {
+      const { rows } = await q.query(
+        `SELECT video_id AS id, title, channel, duration_seconds, upload_date,
+           description, category, reasoning, topics, transcript,
+           transcript_available
+         FROM videos WHERE user_id = $1 AND video_id = $2`,
+        [userId, videoId]
+      );
+      return rows[0] || null;
+    },
+
+    async saveTranscript(userId, videoId, {
+      transcript,
+      source,
+      description,
+      uploadDate,
+      durationSeconds,
+      channel,
+    }) {
+      const { rows } = await q.query(
+        `UPDATE videos SET
+           transcript = $3,
+           transcript_available = true,
+           transcript_source = $4,
+           transcript_fetched_at = now(),
+           description = COALESCE(description, $5),
+           upload_date = COALESCE(upload_date, $6),
+           duration_seconds = COALESCE(duration_seconds, $7),
+           channel = CASE
+             WHEN channel = '' THEN COALESCE(NULLIF($8, ''), channel)
+             ELSE channel
+           END
+         WHERE user_id = $1 AND video_id = $2
+         RETURNING video_id`,
+        [userId, videoId, transcript, source, description, uploadDate, durationSeconds, channel]
+      );
+      return rows.length > 0;
+    },
+
+    async getSummary(userId, videoId) {
+      const { rows } = await q.query(
+        `SELECT summary, model, input_tokens, output_tokens, created_at
+         FROM summaries WHERE user_id = $1 AND video_id = $2`,
+        [userId, videoId]
+      );
+      return rows[0] || null;
+    },
+
+    async saveSummary(userId, videoId, { summary, model, inputTokens, outputTokens }) {
+      const { rows } = await q.query(
+        `INSERT INTO summaries (user_id, video_id, summary, model, input_tokens, output_tokens)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (user_id, video_id) DO NOTHING
+         RETURNING summary, model, input_tokens, output_tokens, created_at`,
+        [userId, videoId, JSON.stringify(summary), model, inputTokens, outputTokens]
+      );
+      return rows[0] || null;
+    },
+
+    async incrementSummariesUsed(userId) {
+      const { rows } = await q.query(
+        "UPDATE users SET summaries_used = summaries_used + 1 WHERE id = $1 RETURNING summaries_used",
+        [userId]
+      );
+      return rows[0]?.summaries_used ?? null;
+    },
+
     async setCategory(userId, videoId, category) {
       const { rows } = await q.query(
         `UPDATE videos SET
@@ -437,11 +525,13 @@ export function createDb(q) {
     },
 
     // ---- usage accounting ----
-    async addUsage({ userId, jobId, inputTokens, outputTokens, videosClassified, costUsd }) {
-      await q.query(
-        "UPDATE classify_jobs SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3 WHERE id = $1",
-        [jobId, inputTokens, outputTokens]
-      );
+    async addUsage({ userId, jobId = null, inputTokens, outputTokens, videosClassified = 0, costUsd }) {
+      if (jobId !== null && jobId !== undefined) {
+        await q.query(
+          "UPDATE classify_jobs SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3 WHERE id = $1",
+          [jobId, inputTokens, outputTokens]
+        );
+      }
       await q.query(
         `UPDATE users SET input_tokens = input_tokens + $2, output_tokens = output_tokens + $3,
            videos_classified = videos_classified + $4

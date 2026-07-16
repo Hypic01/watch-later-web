@@ -111,6 +111,32 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    id: "004-transcripts",
+    sql: `
+      ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript text;
+      ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript_available boolean NOT NULL DEFAULT false;
+      ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript_source text;
+      ALTER TABLE videos ADD COLUMN IF NOT EXISTS transcript_fetched_at timestamptz;
+      ALTER TABLE videos ADD COLUMN IF NOT EXISTS upload_date text;
+      ALTER TABLE videos ADD COLUMN IF NOT EXISTS description text;
+
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS summaries_used int NOT NULL DEFAULT 0;
+
+      CREATE TABLE IF NOT EXISTS summaries (
+        user_id uuid NOT NULL,
+        video_id text NOT NULL,
+        summary jsonb NOT NULL,
+        model text,
+        input_tokens int,
+        output_tokens int,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (user_id, video_id),
+        FOREIGN KEY (user_id, video_id)
+          REFERENCES videos (user_id, video_id) ON DELETE CASCADE
+      );
+    `,
+  },
 ];
 
 export async function migrate(q) {

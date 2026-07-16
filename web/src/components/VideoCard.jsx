@@ -4,7 +4,7 @@ import { SparklesIcon, XIcon, MoreIcon, CheckIcon, ExternalIcon } from "./icons.
 
 const CATEGORIES = ["learn", "watch", "music", "entertainment", "outdated"];
 
-export default function VideoCard({ video, onMove, onDismiss, onDone }) {
+export default function VideoCard({ video, onMove, onDismiss, onDone, onOpenDetail }) {
   // hq720 (1280x720) exists for most videos; hqdefault (480x360) always exists
   const [fallback, setFallback] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -12,17 +12,19 @@ export default function VideoCard({ video, onMove, onDismiss, onDone }) {
   const ytUrl = `https://www.youtube.com/watch?v=${video.id}`;
   return (
     <article className="card">
-      <a className="card__thumbwrap" href={ytUrl} target="_blank" rel="noreferrer"
-        aria-label={`Open "${video.title}" on YouTube`}>
+      <button className="card__thumbwrap" onClick={() => onOpenDetail?.(video)}
+        aria-label={`View details for "${video.title}"`}>
         <img className="card__thumb" src={thumb} alt="" loading="lazy"
           onError={() => { if (!fallback) setFallback(true); }} />
-        <div className="card__open"><span><ExternalIcon size={13} /> Open on YouTube</span></div>
+        <div className="card__open"><span>View details</span></div>
         {video.duration_seconds != null && (
           <span className="card__duration">{formatDuration(video.duration_seconds)}</span>
         )}
-      </a>
+      </button>
       <div className="card__body">
-        <h3 className="card__title" title={video.title}>{video.title}</h3>
+        <h3 className="card__title" title={video.title}>
+          <button onClick={() => onOpenDetail?.(video)}>{video.title}</button>
+        </h3>
         <div className="card__channel">{video.channel}</div>
         {video.reasoning && (
           <div className="card__reasoning" title={video.reasoning}>
@@ -43,6 +45,10 @@ export default function VideoCard({ video, onMove, onDismiss, onDone }) {
               <>
                 <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
                 <div className="card__menu" role="menu">
+                  <a href={ytUrl} target="_blank" rel="noreferrer" role="menuitem"
+                    onClick={() => setMenuOpen(false)}>
+                    <ExternalIcon size={12} /> Open on YouTube
+                  </a>
                   {CATEGORIES.filter((c) => c !== video.category).map((c) => (
                     <button key={c} role="menuitem"
                       onClick={() => { setMenuOpen(false); onMove(video.id, c); }}>

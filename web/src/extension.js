@@ -1,4 +1,5 @@
 import {
+  WLL_FETCH_TRANSCRIPT,
   WLL_GET_STATUS,
   WLL_PING,
   WLL_SET_TOKEN,
@@ -126,6 +127,16 @@ export function createExtensionClient({
 
     sync(mode = "delta") {
       return send(WLL_SYNC, { mode });
+    },
+
+    async fetchTranscript(videoId) {
+      const response = await send(WLL_FETCH_TRANSCRIPT, { videoId });
+      if (!response?.ok) {
+        const error = new Error(response?.message || "The extension could not fetch the transcript.");
+        error.code = response?.error || "TRANSCRIPT_FETCH_FAILED";
+        throw error;
+      }
+      return response;
     },
 
     connectPort() {

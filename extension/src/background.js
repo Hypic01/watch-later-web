@@ -3,11 +3,13 @@ import {
   SYNC_KEEPALIVE_ALARM,
   createSyncController,
 } from "./sync.js";
+import { createTranscriptController } from "./transcript.js";
 import {
   COLLECT_DONE,
   COLLECT_ERROR,
   COLLECT_PROGRESS,
   WLL_GET_STATUS,
+  WLL_FETCH_TRANSCRIPT,
   WLL_PING,
   WLL_SET_TOKEN,
   WLL_SYNC,
@@ -42,6 +44,12 @@ const controller = createSyncController({
   ]),
 });
 
+const transcriptController = createTranscriptController({
+  fetch: globalThis.fetch.bind(globalThis),
+  tabs: chrome.tabs,
+  scripting: chrome.scripting,
+});
+
 function dispatchCommand(message, sender, external = false) {
   if (message?.type === WLL_PING) {
     return Promise.resolve({ ok: true, version: chrome.runtime.getManifest().version });
@@ -49,6 +57,9 @@ function dispatchCommand(message, sender, external = false) {
   if (message?.type === WLL_SET_TOKEN) return controller.setConnection(message);
   if (message?.type === WLL_GET_STATUS) return controller.getStatus();
   if (message?.type === WLL_SYNC) return controller.start({ mode: message.mode });
+  if (external && message?.type === WLL_FETCH_TRANSCRIPT) {
+    return transcriptController.fetchTranscript(message.videoId);
+  }
   if (!external && [COLLECT_PROGRESS, COLLECT_DONE, COLLECT_ERROR].includes(message?.type)) {
     return controller.handleCollectorMessage(message, sender);
   }
@@ -86,10 +97,12 @@ chrome.runtime.onConnectExternal.addListener((port) => {
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   controller.handleTabRemoved(tabId).catch(() => {});
+  transcriptController.handleTabRemoved(tabId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   controller.handleTabUpdated(tabId, changeInfo, tab).catch(() => {});
+  transcriptController.handleTabUpdated(tabId, changeInfo, tab);
 });
 
 // This alarm exists only while a sync is active. Its event wakes an idle MV3

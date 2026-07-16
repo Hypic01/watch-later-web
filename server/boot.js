@@ -14,6 +14,8 @@ import { createImporter } from "./importer.js";
 import { createWorker } from "./worker.js";
 import { createBilling } from "./billing.js";
 import { createApp } from "./app.js";
+import { createMentor } from "./mentor.js";
+import { createTranscriptFetcher } from "./transcripts.js";
 
 export const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -76,6 +78,8 @@ export async function buildApp(env = process.env) {
   // ---- modules ----
   const importer = createImporter({ db, config });
   const worker = llm ? createWorker({ db, llm, config, log: (m) => console.log(`[worker] ${m}`) }) : null;
+  const mentor = llm ? createMentor({ llm, model: config.classifyModel }) : null;
+  const transcripts = createTranscriptFetcher();
   let billing = null;
   if (config.stripeSecretKey && config.stripeWebhookSecret && config.stripePriceId) {
     billing = createBilling({ db, config });
@@ -89,6 +93,8 @@ export async function buildApp(env = process.env) {
     importer,
     worker,
     billing,
+    mentor,
+    transcripts,
     config,
     collectorPath: path.join(repoRoot, "collector", "dist", "collector.js"),
   });

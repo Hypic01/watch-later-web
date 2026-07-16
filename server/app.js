@@ -8,6 +8,41 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { CATEGORIES } from "./db.js";
 import { hashToken } from "./auth.js";
+import { estimateCostUsd } from "./config.js";
+
+const MAX_TRANSCRIPT_BYTES = 1024 * 1024;
+const MAX_TRANSCRIPT_CHARS = 250000;
+const TRANSCRIPT_FAILURE = "YouTube would not hand captions to our server. With the Chrome extension we fetch them straight from your browser instead.";
+
+function optionalText(value, max) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text ? text.slice(0, max) : null;
+}
+
+function transcriptFields(body, defaultSource) {
+  if (typeof body?.transcript !== "string" || !body.transcript.trim()) {
+    return { error: { status: 400, body: { error: "transcript is required" } } };
+  }
+  if (Buffer.byteLength(body.transcript, "utf8") > MAX_TRANSCRIPT_BYTES) {
+    return { error: { status: 413, body: { error: "transcript is too large" } } };
+  }
+  const metadata = body.metadata && typeof body.metadata === "object" ? body.metadata : body;
+  const rawDuration = metadata.durationSeconds ?? metadata.duration_seconds;
+  const duration = Number(rawDuration);
+  const truncated = body.transcript.length > MAX_TRANSCRIPT_CHARS;
+  return {
+    value: {
+      transcript: body.transcript.slice(0, MAX_TRANSCRIPT_CHARS),
+      source: optionalText(body.source ?? metadata.source, 50) || defaultSource,
+      description: optionalText(metadata.description, 5000),
+      uploadDate: optionalText(metadata.uploadDate ?? metadata.upload_date, 40),
+      durationSeconds: Number.isFinite(duration) && duration > 0 ? Math.floor(duration) : null,
+      channel: optionalText(metadata.channel, 120),
+      truncated,
+    },
+  };
+}
 
 function publicApiToken(row) {
   return {
@@ -19,8 +54,42 @@ function publicApiToken(row) {
   };
 }
 
-export function createApp({ db, auth, importer, worker, billing, config, collectorPath, randomBytes = crypto.randomBytes }) {
+export function createApp({
+  db,
+  auth,
+  importer,
+  worker,
+  billing,
+  mentor,
+  transcripts,
+  config,
+  collectorPath,
+  randomBytes = crypto.randomBytes,
+}) {
   const app = express();
+
+  async function persistTranscript(userId, videoId, body, defaultSource) {
+    const parsed = transcriptFields(body, defaultSource);
+    if (parsed.error) return parsed.error;
+    const { truncated, ...fields } = parsed.value;
+    const found = await db.saveTranscript(userId, videoId, fields);
+    if (!found) return { status: 404, body: { error: "unknown video" } };
+    return {
+      status: 200,
+      body: { ok: true, truncated, transcriptAvailable: true },
+    };
+  }
+
+  async function summaryBudgetPaused() {
+    const kill = await db.getConfig("kill_switch");
+    if (kill?.on) return true;
+    const usage = await db.getConfig("global_usage");
+    if (usage && Number(usage.est_cost_usd || 0) >= config.budgetUsd) {
+      await db.setConfig("kill_switch", { on: true, reason: "budget ceiling reached" });
+      return true;
+    }
+    return false;
+  }
 
   if (billing) {
     app.post("/api/billing/webhook", express.raw({ type: "application/json" }), (req, res) =>
@@ -63,6 +132,8 @@ export function createApp({ db, auth, importer, worker, billing, config, collect
       tasteProfile: u.taste_profile,
       freeQuota: u.free_quota,
       freeUsed: u.free_used,
+      summaryQuota: config.freeSummaryQuota,
+      summariesUsed: u.summaries_used,
       videoCap: u.video_cap,
       counts,
       hasTaste: u.taste_profile && Object.keys(u.taste_profile).length > 0,
@@ -171,6 +242,106 @@ export function createApp({ db, auth, importer, worker, billing, config, collect
 
   app.get("/api/cleanup", auth.required, async (req, res) => {
     res.json(await db.getCleanup(req.user.id));
+  });
+
+  app.get("/api/videos/:id", auth.required, async (req, res) => {
+    const video = await db.getVideoDetail(req.user.id, req.params.id);
+    if (!video) return res.status(404).json({ error: "unknown video" });
+    res.json(video);
+  });
+
+  app.post("/api/videos/:id/transcript", auth.required, async (req, res) => {
+    const result = await persistTranscript(req.user.id, req.params.id, req.body, "extension");
+    res.status(result.status).json(result.body);
+  });
+
+  app.post("/api/videos/:id/transcript/fetch", auth.required, async (req, res) => {
+    if (!(await db.getVideo(req.user.id, req.params.id))) {
+      return res.status(404).json({ error: "unknown video" });
+    }
+    try {
+      if (!transcripts) throw new Error("transcript fetcher unavailable");
+      const fetched = await transcripts.fetchTranscript(req.params.id);
+      const result = await persistTranscript(req.user.id, req.params.id, fetched, "server");
+      if (result.status !== 200) return res.status(result.status).json(result.body);
+      res.json(result.body);
+    } catch {
+      res.status(502).json({ error: TRANSCRIPT_FAILURE });
+    }
+  });
+
+  app.post("/api/videos/:id/summary", auth.required, async (req, res) => {
+    const [detail, user] = await Promise.all([
+      db.getVideoDetail(req.user.id, req.params.id),
+      db.getUser(req.user.id),
+    ]);
+    if (!detail) return res.status(404).json({ error: "unknown video" });
+    const meter = () => ({
+      summariesUsed: user.summaries_used,
+      summaryQuota: config.freeSummaryQuota,
+    });
+    if (detail.summary) {
+      return res.json({ summary: detail.summary, cached: true, ...meter() });
+    }
+    const video = await db.getVideoTranscript(req.user.id, req.params.id);
+    if (!video.transcript_available || !video.transcript) {
+      return res.status(400).json({
+        error: "Fetch the transcript before asking for a summary.",
+        needsTranscript: true,
+        ...meter(),
+      });
+    }
+
+    const bypass = req.user.isAdmin || user.plan === "pro";
+    if (!bypass && user.summaries_used >= config.freeSummaryQuota) {
+      return res.status(402).json({
+        error: `You have used all ${config.freeSummaryQuota} free summaries.`,
+        upgrade: true,
+        ...meter(),
+      });
+    }
+    if (!mentor) {
+      return res.status(503).json({ error: "The summary service is not configured yet." });
+    }
+    if (await summaryBudgetPaused()) {
+      return res.status(503).json({ error: "Summaries are temporarily paused. Please try again later." });
+    }
+
+    let generated;
+    try {
+      generated = await mentor.summarize(video, { tasteProfile: user.taste_profile || {} });
+    } catch {
+      return res.status(502).json({ error: "The librarian could not summarize this video. Please try again." });
+    }
+    const usage = {
+      input: Math.max(0, Math.floor(Number(generated.usage?.input) || 0)),
+      output: Math.max(0, Math.floor(Number(generated.usage?.output) || 0)),
+    };
+    const saved = await db.saveSummary(req.user.id, req.params.id, {
+      summary: generated.summary,
+      model: generated.model || config.classifyModel,
+      inputTokens: usage.input,
+      outputTokens: usage.output,
+    });
+
+    // A concurrent request may have filled the cache while this request was at
+    // the model. Return that winner without spending the user's free meter.
+    if (!saved) {
+      const winner = await db.getSummary(req.user.id, req.params.id);
+      if (winner) return res.json({ summary: winner.summary, cached: true, ...meter() });
+      return res.status(502).json({ error: "The librarian could not save this summary. Please try again." });
+    }
+
+    if (!bypass) user.summaries_used = await db.incrementSummariesUsed(req.user.id);
+    await db.addUsage({
+      userId: req.user.id,
+      jobId: null,
+      inputTokens: usage.input,
+      outputTokens: usage.output,
+      videosClassified: 0,
+      costUsd: estimateCostUsd({ inputTokens: usage.input, outputTokens: usage.output, batch: false }),
+    });
+    res.json({ summary: generated.summary, cached: false, ...meter() });
   });
 
   app.post("/api/videos/:id/category", auth.required, async (req, res) => {

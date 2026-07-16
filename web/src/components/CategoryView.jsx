@@ -6,7 +6,7 @@ import { ArrowLeftIcon, SearchIcon } from "./icons.jsx";
 const PAGE_SIZE = 60;
 
 export default function CategoryView({ row, videos, chips, onMove, onDismiss, onDone, onBack,
-  query, onQuery, sort, onSort }) {
+  onOpenDetail, query, onQuery, sort, onSort }) {
   const RowIcon = row.icon;
   const [limit, setLimit] = useState(PAGE_SIZE);
   const sentinelRef = useRef(null);
@@ -57,7 +57,8 @@ export default function CategoryView({ row, videos, chips, onMove, onDismiss, on
         <>
           <div className="grid">
             {shown.map((v) => (
-              <VideoCard key={v.id} video={v} onMove={onMove} onDismiss={onDismiss} onDone={onDone} />
+              <VideoCard key={v.id} video={v} onMove={onMove} onDismiss={onDismiss} onDone={onDone}
+                onOpenDetail={onOpenDetail} />
             ))}
           </div>
           {videos.length > limit && (

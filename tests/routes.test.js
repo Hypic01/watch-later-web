@@ -32,6 +32,8 @@ describe("auth coverage", () => {
       ["post", "/api/imports"], ["get", "/api/jobs/current"], ["post", "/api/jobs/1/cancel"],
       ["post", "/api/jobs/classify-remaining"], ["get", "/api/board"], ["get", "/api/status"],
       ["get", "/api/cleanup"], ["post", "/api/videos/x/category"], ["post", "/api/videos/x/dismiss"],
+      ["get", "/api/videos/x"], ["post", "/api/videos/x/transcript"],
+      ["post", "/api/videos/x/transcript/fetch"], ["post", "/api/videos/x/summary"],
       ["post", "/api/videos/done"], ["get", "/api/admin/stats"], ["post", "/api/admin/kill-switch"],
     ]) {
       const res = await request(app)[method](path);

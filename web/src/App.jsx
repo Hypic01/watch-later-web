@@ -10,6 +10,7 @@ import ImportPanel from "./components/ImportPanel.jsx";
 import JobProgress from "./components/JobProgress.jsx";
 import UpgradeBand from "./components/UpgradeBand.jsx";
 import Settings from "./components/Settings.jsx";
+import VideoDetail from "./components/VideoDetail.jsx";
 import {
   availabilitySummary,
   createExtensionClient,
@@ -80,6 +81,7 @@ export default function App() {
   const [board, setBoard] = useState(null);
   const [job, setJob] = useState(null);
   const [view, setView] = useState("board");
+  const [focus, setFocus] = useState(null);
   const [query, setQuery] = useState("");
   const [topic, setTopic] = useState(null);
   const [duration, setDuration] = useState(null);
@@ -155,6 +157,14 @@ export default function App() {
     setView("board");
     await reload();
   }, [adoptJob, reload, showToast]);
+
+  const onSummaryUsed = useCallback((used, quota) => {
+    setMe((current) => current ? {
+      ...current,
+      summariesUsed: Number.isFinite(Number(used)) ? Number(used) : current.summariesUsed,
+      summaryQuota: Number.isFinite(Number(quota)) ? Number(quota) : current.summaryQuota,
+    } : current);
+  }, []);
 
   // session
   useEffect(() => {
@@ -448,11 +458,14 @@ export default function App() {
 
   const move = async (id, category) => {
     await api.setCategory(id, category);
+    setFocus((current) => current?.id === id ? { ...current, category } : current);
     showToast(`Moved to ${category}. The AI learns from your corrections ✦`);
     reload();
   };
   const dismiss = async (id) => { await api.dismissVideo(id); reload(); };
   const done = async (id) => { await api.markDone([id]); showToast("Marked done. It's on your cleanup checklist"); reload(); };
+  const openDetail = (video) => setFocus(video);
+  const detailRow = focus ? ROWS.find((row) => row.key === focus.category) : null;
 
   const chipsBar = (
     <div className="filters">
@@ -489,7 +502,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <button className="brand" onClick={() => setView("board")} aria-label="Back to the board">
+        <button className="brand" onClick={() => { setFocus(null); setView("board"); }} aria-label="Back to the board">
           <span className="brand__mark"><BoardIcon size={18} /></span>
           <h1>watch-later-librarian</h1>
         </button>
@@ -505,14 +518,17 @@ export default function App() {
             <SyncIcon size={15} /> {extensionSyncing ? "Syncing…" : "Sync"}
           </button>
         ) : null}
-        <button className="btn btn--primary" onClick={() => setView("import")}>
+        <button className="btn btn--primary" onClick={() => { setFocus(null); setView("import"); }}>
           <UploadIcon size={15} /> Import
         </button>
-        <button className="btn btn--ghost" onClick={() => setView(view === "cleanup" ? "board" : "cleanup")}
+        <button className="btn btn--ghost" onClick={() => {
+          setFocus(null);
+          setView(view === "cleanup" ? "board" : "cleanup");
+        }}
           aria-label="Cleanup checklist">
           {view === "cleanup" ? <><BoardIcon size={15} /> Board</> : <><HistoryIcon size={15} /> Cleanup</>}
         </button>
-        <button className="btn btn--ghost" onClick={() => setView("settings")} aria-label="Settings">
+        <button className="btn btn--ghost" onClick={() => { setFocus(null); setView("settings"); }} aria-label="Settings">
           <SettingsIcon size={15} />
         </button>
       </header>
@@ -523,7 +539,14 @@ export default function App() {
       {toast && <div className="toast" role="status" aria-live="polite">{toast}</div>}
 
       <main>
-        {needsQuiz && view !== "import" && view !== "settings" ? (
+        {focus ? (
+          <VideoDetail video={focus} rowMeta={detailRow} me={me}
+            extensionPresent={extensionState.present}
+            fetchTranscriptFromExtension={extensionClient.fetchTranscript}
+            onBack={() => setFocus(null)} onMove={move} onDismiss={dismiss}
+            onToast={showToast} onSummaryUsed={onSummaryUsed}
+            onLearn={() => showToast("Learn sessions are coming soon.")} />
+        ) : needsQuiz && view !== "import" && view !== "settings" ? (
           <Onboarding onDone={() => reload().then(() => setView("import"))} />
         ) : view === "settings" ? (
           <Settings me={me} onBack={() => setView("board")} onToast={showToast}
@@ -543,7 +566,7 @@ export default function App() {
           <CategoryView row={ROWS.find((r) => r.key === view)}
             videos={withQuery(matches(board[view]))} chips={chipsBar}
             query={query} onQuery={setQuery} sort={sort} onSort={setSort}
-            onMove={move} onDismiss={dismiss} onDone={done}
+            onMove={move} onDismiss={dismiss} onDone={done} onOpenDetail={openDetail}
             onBack={() => { setView("board"); setQuery(""); }} />
         ) : boardEmpty ? (
           <div className="empty-hero">
@@ -565,6 +588,7 @@ export default function App() {
               <Row key={r.key} label={r.label} tint={r.tint} icon={r.icon}
                 videos={matches(board[r.key])} emptyLine={r.empty}
                 onMove={move} onDismiss={dismiss} onDone={done}
+                onOpenDetail={openDetail}
                 onOpen={() => setView(r.key)} />
             ))}
             {job?.state === "failed" && job.error ? (
