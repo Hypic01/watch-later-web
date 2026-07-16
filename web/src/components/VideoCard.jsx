@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { formatDuration } from "../lib.js";
-import { SparklesIcon, XIcon, MoreIcon, CheckIcon, ExternalIcon } from "./icons.jsx";
+import { SparklesIcon, XIcon, MoreIcon, CheckIcon, ExternalIcon, LearnIcon, LockIcon } from "./icons.jsx";
 
 const CATEGORIES = ["learn", "watch", "music", "entertainment", "outdated"];
 
-export default function VideoCard({ video, onMove, onDismiss, onDone, onOpenDetail }) {
+export default function VideoCard({ video, onMove, onDismiss, onDone, onOpenDetail, onTldr, onLearn, freePlan }) {
   // hq720 (1280x720) exists for most videos; hqdefault (480x360) always exists
   const [fallback, setFallback] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -32,9 +32,14 @@ export default function VideoCard({ video, onMove, onDismiss, onDone, onOpenDeta
             <span>{video.reasoning}</span>
           </div>
         )}
+        {/* The features live on the card face so they can be discovered;
+            housekeeping actions live behind the kebab. */}
         <div className="card__actions">
-          <button onClick={() => onDone(video.id)} aria-label={`Mark "${video.title}" as done`}>
-            <CheckIcon size={13} /> done
+          <button onClick={() => onTldr?.(video)} aria-label={`TL;DR for "${video.title}"`}>
+            <SparklesIcon size={13} /> TL;DR
+          </button>
+          <button onClick={() => onLearn?.(video)} aria-label={`Learn "${video.title}"`}>
+            {freePlan ? <LockIcon size={12} /> : <LearnIcon size={13} />} Learn
           </button>
           <div className="card__menuwrap">
             <button className="card__kebab" aria-haspopup="menu" aria-expanded={menuOpen}
@@ -55,9 +60,13 @@ export default function VideoCard({ video, onMove, onDismiss, onDone, onOpenDeta
                       move to {c}
                     </button>
                   ))}
+                  <button role="menuitem"
+                    onClick={() => { setMenuOpen(false); onDone(video.id); }}>
+                    <CheckIcon size={12} /> Remove · watched it
+                  </button>
                   <button role="menuitem" className="menu-danger"
                     onClick={() => { setMenuOpen(false); onDismiss(video.id); }}>
-                    <XIcon size={12} /> dismiss
+                    <XIcon size={12} /> Remove · not interested
                   </button>
                   <div className="card__menu-hint">
                     <SparklesIcon size={11} /> moves teach the AI your taste

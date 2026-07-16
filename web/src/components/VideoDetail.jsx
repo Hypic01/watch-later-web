@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as api from "../api.js";
 import { formatDuration, parseTopics } from "../lib.js";
 import {
@@ -31,6 +31,7 @@ export default function VideoDetail({
   video: preview,
   rowMeta,
   me,
+  intent = null,
   extensionPresent,
   fetchTranscriptFromExtension,
   onBack,
@@ -49,6 +50,7 @@ export default function VideoDetail({
   const [summaryError, setSummaryError] = useState("");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeBusy, setUpgradeBusy] = useState(false);
+  const intentDoneRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -160,6 +162,18 @@ export default function VideoDetail({
     }
     onLearn?.(video);
   };
+
+  // A TL;DR or Learn click on the card carries into this view as an intent:
+  // act on it exactly once, as soon as the detail has loaded.
+  useEffect(() => {
+    intentDoneRef.current = false;
+  }, [preview.id]);
+  useEffect(() => {
+    if (!intent || intentDoneRef.current || detailLoading) return;
+    intentDoneRef.current = true;
+    if (intent === "tldr") loadSummary();
+    if (intent === "learn") learn();
+  });
 
   const move = async (event) => {
     const category = event.target.value;

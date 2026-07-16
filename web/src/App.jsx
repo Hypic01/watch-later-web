@@ -82,6 +82,7 @@ export default function App() {
   const [job, setJob] = useState(null);
   const [view, setView] = useState("board");
   const [focus, setFocus] = useState(null);
+  const [focusIntent, setFocusIntent] = useState(null);
   const [query, setQuery] = useState("");
   const [topic, setTopic] = useState(null);
   const [duration, setDuration] = useState(null);
@@ -464,7 +465,15 @@ export default function App() {
   };
   const dismiss = async (id) => { await api.dismissVideo(id); reload(); };
   const done = async (id) => { await api.markDone([id]); showToast("Marked done. It's on your cleanup checklist"); reload(); };
-  const openDetail = (video) => setFocus(video);
+  // intent carries a card-level action into the detail view: "tldr" starts
+  // the summary as soon as the detail loads, "learn" triggers the Learn flow.
+  const openDetail = (video, intent = null) => {
+    setFocusIntent(intent);
+    setFocus(video);
+  };
+  const cardTldr = (video) => openDetail(video, "tldr");
+  const cardLearn = (video) => openDetail(video, "learn");
+  const freePlan = me.plan !== "pro";
   const detailRow = focus ? ROWS.find((row) => row.key === focus.category) : null;
 
   const chipsBar = (
@@ -540,10 +549,10 @@ export default function App() {
 
       <main>
         {focus ? (
-          <VideoDetail video={focus} rowMeta={detailRow} me={me}
+          <VideoDetail video={focus} rowMeta={detailRow} me={me} intent={focusIntent}
             extensionPresent={extensionState.present}
             fetchTranscriptFromExtension={extensionClient.fetchTranscript}
-            onBack={() => setFocus(null)} onMove={move} onDismiss={dismiss}
+            onBack={() => { setFocus(null); setFocusIntent(null); }} onMove={move} onDismiss={dismiss}
             onToast={showToast} onSummaryUsed={onSummaryUsed}
             onLearn={() => showToast("Learn sessions are coming soon.")} />
         ) : needsQuiz && view !== "import" && view !== "settings" ? (
@@ -567,6 +576,7 @@ export default function App() {
             videos={withQuery(matches(board[view]))} chips={chipsBar}
             query={query} onQuery={setQuery} sort={sort} onSort={setSort}
             onMove={move} onDismiss={dismiss} onDone={done} onOpenDetail={openDetail}
+            onTldr={cardTldr} onLearn={cardLearn} freePlan={freePlan}
             onBack={() => { setView("board"); setQuery(""); }} />
         ) : boardEmpty ? (
           <div className="empty-hero">
@@ -589,6 +599,7 @@ export default function App() {
                 videos={matches(board[r.key])} emptyLine={r.empty}
                 onMove={move} onDismiss={dismiss} onDone={done}
                 onOpenDetail={openDetail}
+                onTldr={cardTldr} onLearn={cardLearn} freePlan={freePlan}
                 onOpen={() => setView(r.key)} />
             ))}
             {job?.state === "failed" && job.error ? (

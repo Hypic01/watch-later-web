@@ -5,7 +5,7 @@ import { ChevronRightIcon } from "./icons.jsx";
 const MAX_ROW_CARDS = 10;
 
 export default function Row({ label, tint, icon: RowIcon, videos, onMove, onDismiss, onDone, onOpen,
-  onOpenDetail, emptyLine }) {
+  onOpenDetail, onTldr, onLearn, freePlan, emptyLine }) {
   const shown = videos.slice(0, MAX_ROW_CARDS);
   return (
     <section className="row" style={{ "--row-tint": tint }}>
@@ -21,7 +21,7 @@ export default function Row({ label, tint, icon: RowIcon, videos, onMove, onDism
         {videos.length === 0 && <div className="row__empty">— {emptyLine ?? "nothing here yet"} —</div>}
         {shown.map((v) => (
           <VideoCard key={v.id} video={v} onMove={onMove} onDismiss={onDismiss} onDone={onDone}
-            onOpenDetail={onOpenDetail} />
+            onOpenDetail={onOpenDetail} onTldr={onTldr} onLearn={onLearn} freePlan={freePlan} />
         ))}
         {videos.length > MAX_ROW_CARDS && (
           <button className="row__more" onClick={onOpen}>
