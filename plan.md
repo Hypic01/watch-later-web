@@ -75,8 +75,9 @@ budget-bounded bites piggybacked on the client's 3s `GET /api/jobs/current` poll
 ## 1. Why (context, so you make good judgment calls)
 
 The product sorts a user's YouTube Watch Later backlog into 5 rows (learn / watch / music /
-entertainment / outdated) with claude-haiku-4-5. Freemium: first 100 videos free, $5/mo Pro up
-to 10,000. It is live and working.
+entertainment / outdated) with claude-haiku-4-5. Freemium (revised 2026-07-16, see M8): Free =
+newest 1,000 videos all sorted + 100 TL;DRs per calendar month; Pro = $4/mo or $40/yr, no video
+limit (fair-use 25,000), unlimited TL;DR, Learn. It is live and working.
 
 YouTube's 07-12 lockdown means the user's own real browser is now the **only** viable data
 plane. That converts the Chrome extension from a nice-to-have into the core architecture, and
@@ -86,9 +87,12 @@ library silently in sync is a real product with real switching cost.
 Locked product decisions (do not relitigate):
 - Extension is core. **Auto-sync ON by default, daily** (popup control: 6h / daily / off).
 - Feature parity with the owner's beloved personal app, tier-gated: in-app **VideoDetail**;
-  **TL;DR** (free taste of 7, then Pro); **Learn** mentor (Pro, but **visible-and-locked from
-  day one** so free users know what they would be buying); **bulk-remove from real WL** later
-  as **Pro**.
+  **TL;DR** (free = 100 per calendar month since M8; the original "taste of 7" is superseded);
+  **Learn** mentor (Pro, but **visible-and-locked from day one** so free users know what they
+  would be buying); **bulk-remove from real WL** later as **Pro**.
+- Monetization (2026-07-16, M8): provider = **Polar** (merchant of record; sandbox until the
+  owner's visa/OPT clearance); **$4/mo or $40/yr**; Free = newest 1,000 videos all sorted;
+  Pro fair-use cap 25,000, marketed unlimited. Downgrades never delete anything.
 - Owner parity: one-time migration of his `library.db` into his hosted admin account; a local
   vault-ingest bridge that reuses the archived app's `ingestQueue` + `claude` CLI.
 - Paste-collector stays forever as onboarding + fallback.
@@ -107,6 +111,7 @@ Locked product decisions (do not relitigate):
 | M5 | Owner library migration | M4 schema |
 | M6 | Learn mentor real port (Pro) | M4, M5 |
 | M7 | Vault-ingest bridge | M5 |
+| M8 | Monetization: Polar subscriptions + new Free/Pro tiers | M4 (summaries table) |
 
 (Joon runs a manual check of the live collector against post-07-12 YouTube in parallel; its
 result only tells us which DOM extractor is live, and M1's extractor registry handles either.
@@ -551,6 +556,235 @@ admin-scope gate); `tests/vault-bridge.test.js` in the archived repo mirroring i
 usage-limit backoff).
 
 ---
+
+## M8 — Monetization: Polar subscriptions + new Free/Pro tiers (approved 2026-07-16)
+
+**Why.** The product works end to end; this milestone turns on the business. New tiers:
+**Free** = newest 1,000 videos stored and ALL of them classified free (replaces the old
+"first 100 classified" free_quota model) + 100 TL;DRs per calendar month (replaces lifetime 7)
++ Learn locked. **Pro** = $4/month or $40/year via Polar hosted checkout, no video limit
+(fair-use 25,000, marketed unlimited), unlimited TL;DR, Learn access (M6 ships Learn itself).
+
+**HARD GUARDRAIL:** build fully against Polar's SANDBOX. Production billing stays OFF (no
+`POLAR_*` env vars in Vercel) until the owner's visa/OPT clearance. The boot gate
+(billing=null when env missing → checkout 404 → "Pro isn't open yet" toast) is the off-switch
+and must keep exactly that behavior. `FAKE_LLM=1 DEV_FAKE_AUTH=1` with no Polar env must keep
+running the whole product.
+
+**Why this is tractable:** billing is wired at exactly 3 seams — `server/config.js` (env) →
+`server/boot.js` (construct-if-configured gate) → `server/app.js` (raw-body webhook mount
+before express.json; checkout/portal routes inside `if (billing)`) + the `server/billing.js`
+adapter. Webhooks → `db.setPlan` is the single source of truth for plan state. Keep every
+route/interface shape; swap the adapter internals from Stripe to Polar.
+
+### Locked design decisions
+- **Caps computed from plan at request time** (`config.freeVideoCap` 1000 /
+  `config.proVideoCap` 25000 via the existing `isPro()`), NOT the per-user `video_cap`
+  column. Admins get pro caps automatically; webhooks never maintain caps; downgrade
+  grandfathering falls out of `upsertFromImport`'s existing behavior (existing rows always
+  pass; only new rows beyond headroom drop — nothing is ever deleted on downgrade).
+- **`video_cap`, `free_quota`, `free_used`, `summaries_used` become vestigial columns** —
+  leave them, remove the gates. `worker.js`'s `incrementFreeUsed` for free-tier jobs stays as
+  a harmless stat (keeps worker tests untouched).
+- **TL;DR meter = count of `summaries` rows this UTC calendar month**
+  (`created_at >= date_trunc('month', now())`) — no new bookkeeping column; resets on the
+  1st; cached hits already cost nothing. Note in a comment: a downgraded pro's same-month
+  rows count against the free 100 (accepted fair-use behavior).
+- **Stripe columns stay dormant** (they never held data); add provider-neutral columns.
+- **Free users can now use classify-remaining** (the 402 "needs Pro" gate dies).
+- **Keep `locked: 0` in the import response** so the shipped extension (which forwards it
+  numerically, extension/src/sync.js) needs no coordinated release. No extension changes.
+
+### Migration `005-polar-tiers` (server/migrations.js, append)
+```sql
+ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_customer_id text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_subscription_id text;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_ends_at timestamptz;
+CREATE INDEX IF NOT EXISTS idx_users_billing_customer ON users(billing_customer_id);
+ALTER TABLE users ALTER COLUMN video_cap SET DEFAULT 1000;
+UPDATE users SET video_cap = 1000 WHERE plan = 'free';
+```
+(`billing_ends_at` powers Settings' "Pro until {date}" for scheduled cancels. The video_cap
+default/backfill is cosmetic documentation — the column is vestigial after this milestone.)
+
+### server/db.js
+- `setPlan(id, plan, {customerId, subscriptionId, endsAt})` writes the `billing_*` columns
+  (COALESCE keeps the first-seen customer id, mirroring today's shape).
+- `getUserByBillingCustomer(customerId)` replaces `getUserByStripeCustomer`.
+- DELETE `setStripeCustomer` (Polar keys customers by our user id via `external_customer_id`;
+  no pre-created customer step exists).
+- NEW `countSummariesThisMonth(userId)`:
+  `SELECT count(*)::int FROM summaries WHERE user_id=$1 AND created_at >= date_trunc('month', now())`.
+- DELETE `incrementSummariesUsed` (no callers remain after app.js changes).
+
+### server/billing.js — full rewrite on `@polar-sh/sdk`
+`createBilling({db, config, polarClient})` keeping the exported handler interface
+(`createCheckout(req,res)`, `createPortal(req,res)`, `handleWebhook(req,res)`) so app.js
+routes need zero changes. `polarClient` injectable for tests; prod:
+`new Polar({accessToken: config.polarAccessToken, server: config.polarServer})`.
+- **Checkout**: `polar.checkouts.create({ products: [config.polarProductMonthlyId,
+  config.polarProductAnnualId], successUrl: config.appUrl + "/app?upgraded=1",
+  externalCustomerId: user.id, customerEmail: user.email, metadata: {userId: user.id} })` →
+  `res.json({url: checkout.url})`. The buyer picks monthly vs annual in Polar's hosted
+  checkout. There is no cancel_url concept in Polar.
+- **Portal**: 400 `{error:"no billing profile yet"}` when `!user.billing_customer_id` (the
+  contract Settings already expects); else
+  `polar.customerSessions.create({externalCustomerId: user.id})` →
+  `res.json({url: session.customerPortalUrl})`.
+- **Webhook**: verify with `validateEvent(req.body, req.headers, config.polarWebhookSecret)`
+  from `@polar-sh/sdk/webhooks` (Standard Webhooks HMAC; express.raw preserves the exact
+  bytes — keep the mount order in app.js and `bodyParser: false` in api/index.js untouched).
+  400 `{error:"bad signature"}` on `WebhookVerificationError`. One status-derived
+  `applySubscription(sub)` serves every `subscription.*` event idempotently. Resolve the user
+  by `sub.customer.externalId` → `sub.metadata.userId` → `db.getUserByBillingCustomer(
+  sub.customerId)`, with each id guarded by a UUID regex before hitting `db.getUser` (the
+  users.id column is uuid-typed and throws on garbage). Unknown-but-verified event types get
+  a 2xx ack (never retry-loop). Missing user → 2xx ack too.
+
+| Polar event | Payload state | Action |
+|---|---|---|
+| `subscription.active` | status=active | setPlan pro {customerId, subscriptionId, endsAt:null} — the fast path `?upgraded=1` polls for |
+| `subscription.updated` | catch-all; status authoritative | active/trialing/past_due → pro; anything else → free (covers monthly↔annual switches, payment recovery) |
+| `subscription.canceled` | status=active, cancelAtPeriodEnd=true | STAYS pro; endsAt = sub.endsAt ?? sub.currentPeriodEnd |
+| `subscription.uncanceled` | status=active, cancelAtPeriodEnd=false | pro; endsAt null |
+| `subscription.revoked` | access actually ended | setPlan free {customerId, subscriptionId:null, endsAt:null} — nothing deleted |
+
+### server/config.js
+- REMOVE `freeVideoQuota` (zero consumers — the old gate read the DB column) and
+  `stripeSecretKey` / `stripeWebhookSecret` / `stripePriceId`.
+- `freeSummaryQuota` default 7 → **100** (env knob `FREE_SUMMARY_QUOTA` survives).
+- ADD `freeVideoCap: Number(env.FREE_VIDEO_CAP) || 1000`,
+  `proVideoCap: Number(env.PRO_VIDEO_CAP) || 25000`,
+  `polarAccessToken/polarWebhookSecret/polarProductMonthlyId/polarProductAnnualId` (strings),
+  `polarServer: env.POLAR_SERVER === "production" ? "production" : "sandbox"`.
+
+### server/boot.js
+Billing gate becomes: all four of `polarAccessToken`, `polarWebhookSecret`,
+`polarProductMonthlyId`, `polarProductAnnualId` set → `createBilling({db, config})`; else
+`billing = null` + console note `"[billing] Polar env not set — upgrade flow disabled (free
+tier still works)"`.
+
+### server/importer.js
+- `handleImport`: `const cap = isPro(user, dbUser) ? config.proVideoCap :
+  config.freeVideoCap;` passed to `upsertFromImport`. The freemium split DIES: `willClassify
+  = unscanned` for everyone; respond `{added, duplicates, capped, jobId, willClassify,
+  locked: 0}`. Rewrite the stale header comment.
+- `classifyRemaining`: delete the free-user 402 block; tier = `isPro(...) ? "pro" : "free"`.
+  Keep llmReady 503, active-job 409, nothing-left 400 guards.
+
+### server/app.js
+- `/api/me`: drop `freeQuota`/`freeUsed` from the payload. `summariesUsed =
+  await db.countSummariesThisMonth(...)`; `summaryQuota = config.freeSummaryQuota`;
+  `videoCap = (isAdmin || plan==="pro") ? config.proVideoCap : config.freeVideoCap`;
+  ADD `proEndsAt: u.billing_ends_at`.
+- Summary route: fetch `monthlyUsed = countSummariesThisMonth` alongside detail+user; the
+  meter helper returns `{summariesUsed, summaryQuota}` from it; gate
+  `if (!bypass && monthlyUsed >= config.freeSummaryQuota)` → 402
+  `"You've used all ${quota} free TL;DRs this month. They reset on the 1st."` + upgrade:true;
+  on fresh generation respond `summariesUsed: monthlyUsed + 1`; cached-hit and
+  concurrent-winner paths return the unchanged count; DELETE the `incrementSummariesUsed`
+  call.
+
+### Frontend
+- **UpgradeBand.jsx**: props `{me, waitingCount, atCap, onToast, onJobStarted}`. Two
+  independent surfaces: SORT action (any plan) when `waitingCount > 0` (headline
+  "{N} videos are waiting to be sorted", button "Sort now", existing sortRemaining handler);
+  UPGRADE CTA when `atCap && me.plan !== "pro"` ("Your library is at the free limit — the
+  newest {me.videoCap} videos. Pro imports your whole backlog, with unlimited TL;DRs.",
+  existing upgrade handler). 404 toast → "Pro isn't open yet, you're early! Everything you
+  have stays free."
+- **App.jsx**: rename lockedCount → `waitingCount` (= unscanned when no active job);
+  `atCap = me.plan !== "pro" && totalVideos >= me.videoCap`; render the band when
+  `waitingCount > 0 || atCap`; `onImported` toast drops the `locked` bit and adds
+  `capped` → "{N} older videos skipped — you're at your plan's limit"; `?upgraded=1` poll
+  tries 15 → 30 (60s; sandbox webhooks can lag); AuthGate copy (line ~57) and empty-hero
+  copy lose "first 100" → "your newest 1,000 videos, free" phrasing via `me.videoCap` where
+  a number is shown.
+- **Settings.jsx** (the upgrade/manage/cancel surface): Free →
+  "Free. Your newest {videoCap} videos, {summariesUsed} of {summaryQuota} TL;DRs used this
+  month." + PRIMARY "Upgrade to Pro" button (same checkout flow as UpgradeBand incl. 404
+  toast). Pro → "Pro. Your whole backlog, unlimited TL;DRs." or, when `me.proEndsAt`,
+  "Pro until {formatDate(proEndsAt)}. Your library stays sorted after that." + "Manage
+  subscription" (portal; still hidden for admins). Cancel and monthly↔annual switching
+  happen inside Polar's portal.
+- **VideoDetail.jsx**: quota fallback `|| 7` → `|| 100`; meter "{used} of {quota} TL;DRs
+  used this month"; wall panel "Your monthly TL;DRs are used" / "They reset on the 1st. Pro
+  is unlimited, across your whole library."; 404 checkout toast loses stale copy.
+- **web/index.html**: Free card → "Your newest 1,000 videos, all sorted" / "100 TL;DR
+  summaries every month" / taste learning / cleanup checklist. Pro card → **$4**/month +
+  small line "or $40/year — two months free" / "Everything in Free" / "Your entire backlog —
+  no video limit" / "Unlimited TL;DR summaries" / "Learn mode: the librarian teaches you the
+  video". beta-note → "beta pricing · cancel anytime · fair use: 25,000 videos". Meta
+  description (line ~7) + hero fine print (line ~125) lose "first 100". Also
+  `web/public/terms.html` (~line 29): newest 1,000 free, 100 TL;DRs per calendar month,
+  Pro fair-use 25,000.
+- **No changes**: extension/, web/src/api.js (checkout/portal URLs unchanged), VideoCard,
+  Row.
+
+### Dependencies
+package.json: REMOVE `stripe`; ADD `@polar-sh/sdk` (dependencies) and `standardwebhooks`
+(devDependencies — it is the same Standard-Webhooks crypto `validateEvent` verifies, used to
+sign test fixtures; signatures are compatible by construction).
+
+### Implementation-time verification flags (check these, fallbacks specified)
+- VERIFY-1: `validateEvent` body input type — Buffer vs string
+  (`req.body.toString("utf8")` if needed).
+- VERIFY-2: `validateEvent` zod strictness against hand-built fixtures + camelCase field
+  names (`data.customer.externalId`, `data.customerId`, `data.cancelAtPeriodEnd`,
+  `data.currentPeriodEnd`, `data.endsAt`). FALLBACK (fully acceptable): use
+  `standardwebhooks`' `new Webhook(secret).verify(rawString, headers)` + `JSON.parse` and
+  read snake_case fields, confined to `applySubscription`/`resolveUser` — the seam and tests
+  are unchanged either way.
+- VERIFY-3: monthly↔annual switching appears in the customer portal when the subscription's
+  product has a sibling (if unsupported: the portal still covers cancel; document switch =
+  cancel + re-checkout and soften the Settings copy).
+- VERIFY-4: `customerEmail` alongside `externalCustomerId` in checkouts.create (drop the
+  email if it 422s against an existing external customer).
+- VERIFY-5: checkout `metadata` propagating onto the subscription (fallback resolution only;
+  externalId is primary).
+
+### Acceptance (tests)
+- **tests/billing.test.js rewrite** — fake Polar client (`checkouts.create`,
+  `customerSessions.create` echoing their inputs) + REAL Standard-Webhooks signing via the
+  `standardwebhooks` `Webhook` class (mirror the existing fake-Stripe + real-crypto
+  pattern): checkout returns url and passes products [monthly, annual] +
+  externalCustomerId + successUrl containing `?upgraded=1`; portal 400 without a billing
+  profile, 200 after a subscription webhook; garbage signature → 400 and plan stays free;
+  `subscription.active` → pro with billing ids recorded, idempotent on replay;
+  `subscription.canceled` (status active, cancel_at_period_end) → STILL pro +
+  `/api/me.proEndsAt` set; `subscription.revoked` → free, board intact, import beyond
+  `FREE_VIDEO_CAP` reports capped>0, classify-remaining 200s for the free user;
+  `subscription.updated` active/unpaid transitions.
+- **tests/routes.test.js** — freemium-split tests become cap tests (`FREE_VIDEO_CAP="120"`:
+  import 150 → added 120 / capped 30 / willClassify 120 / locked 0, job created; after
+  `setPlan(pro)` import 150 → added 150 / capped 0); "classify-remaining 402 for free" →
+  "works for free users" (200 + willClassify); `/api/me` new contract: summaryQuota 100,
+  summariesUsed 0, videoCap 1000 free / 25000 for the admin fixture, freeQuota and freeUsed
+  `toBeUndefined()`.
+- **tests/summaries.test.js** — keep the `FREE_SUMMARY_QUOTA: "7"` override so the wall
+  test stays 8 videos; replace `summaries_used` assertions with `countSummariesThisMonth` /
+  response meters; NEW monthly-reset boundary test: fill the quota → 402 → backdate the
+  rows (`UPDATE summaries SET created_at = date_trunc('month', now()) - interval '1 day'
+  WHERE user_id = $1`) → next summary 200s with `summariesUsed: 1`.
+- **tests/db.test.js** — setPlan round-trips billing columns + endsAt;
+  `getUserByBillingCustomer`; `countSummariesThisMonth` counts 2 fresh rows as 2 and ignores
+  a backdated one; users default `video_cap === 1000`.
+- **tests/video-detail.test.js** — meter copy fixtures ("N of 100 TL;DRs used this month").
+- **Untouched**: tests/worker.test.js (free_used stat kept), transcript/caption/extension
+  tests.
+- FAKE mode boots with the "[billing] Polar env not set" note; checkout 404s; all existing
+  suites stay green.
+
+### Rollout (Fable runs after review)
+1. Prod migration (`npm run migrate` — additive-only, safe while billing env is unset).
+2. Deploy: this ships the new free tier immediately (newest-1,000 cap, classify-everything,
+   100 TL;DR/month) with billing OFF — the intended pre-clearance state.
+3. Sandbox end-to-end on local/preview env only (products $4/$40, webhook endpoint with the
+   five subscription events, test card 4242… full loop: checkout → upgraded=1 flips pro →
+   portal cancel → "Pro until {date}" → dashboard revoke → free with board intact).
+4. Production billing stays OFF until the owner's OPT clearance (go-live = approved
+   production org + prod products/webhook + four POLAR_* vars + POLAR_SERVER=production +
+   redeploy + Vercel Hobby → Pro).
 
 ## 3. Definition of done (whole plan)
 
