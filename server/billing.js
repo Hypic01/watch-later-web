@@ -65,14 +65,24 @@ export function createBilling({ db, config, polarClient }) {
   return {
     async createCheckout(req, res) {
       const user = await db.getUser(req.user.id);
-      const checkout = await polar.checkouts.create({
-        // Two products = the hosted checkout shows a monthly/annual picker.
-        products: [config.polarProductMonthlyId, config.polarProductAnnualId],
-        successUrl: `${config.appUrl}/app?upgraded=1`,
-        externalCustomerId: user.id,
-        customerEmail: user.email,
-        metadata: { userId: user.id },
-      });
+      let checkout;
+      try {
+        checkout = await polar.checkouts.create({
+          // Two products = the hosted checkout shows a monthly/annual picker.
+          // No customerEmail: Polar validates email deliverability and rejects
+          // throwaway/dev domains with a 422; its checkout collects the email
+          // itself, and externalCustomerId is what links the customer to us.
+          products: [config.polarProductMonthlyId, config.polarProductAnnualId],
+          successUrl: `${config.appUrl}/app?upgraded=1`,
+          externalCustomerId: user.id,
+          metadata: { userId: user.id },
+        });
+      } catch (e) {
+        // A billing-provider failure must never crash the server — return an
+        // honest error the UI can toast.
+        console.error(`[billing] checkout create failed: ${e?.message?.slice(0, 200)}`);
+        return res.status(502).json({ error: "The payment provider could not start checkout. Please try again." });
+      }
       res.json({ url: checkout.url });
     },
 
@@ -83,7 +93,13 @@ export function createBilling({ db, config, polarClient }) {
       if (!user.billing_customer_id) {
         return res.status(400).json({ error: "no billing profile yet" });
       }
-      const session = await polar.customerSessions.create({ externalCustomerId: user.id });
+      let session;
+      try {
+        session = await polar.customerSessions.create({ externalCustomerId: user.id });
+      } catch (e) {
+        console.error(`[billing] portal session failed: ${e?.message?.slice(0, 200)}`);
+        return res.status(502).json({ error: "The payment provider could not open your billing portal. Please try again." });
+      }
       res.json({ url: session.customerPortalUrl });
     },
 
@@ -96,12 +112,19 @@ export function createBilling({ db, config, polarClient }) {
         if (e instanceof WebhookVerificationError) {
           return res.status(400).json({ error: "bad signature" });
         }
-        // Verified bytes that fail to parse would be a Polar-side fault;
-        // acking would drop them silently, so let it 500 into a retry.
-        throw e;
+        // Verified bytes that fail to parse would be a Polar-side fault.
+        console.error(`[billing] webhook parse failed: ${e?.message?.slice(0, 200)}`);
+        return res.status(400).json({ error: "unreadable payload" });
       }
       if (event?.type?.startsWith("subscription.") && event.data) {
-        await applySubscription(event.data);
+        try {
+          await applySubscription(event.data);
+        } catch (e) {
+          // A transient failure (db hiccup) must 500 so Polar retries the
+          // delivery — but never crash the process.
+          console.error(`[billing] webhook apply failed: ${e?.message?.slice(0, 200)}`);
+          return res.status(500).json({ error: "apply failed, retry" });
+        }
       }
       // 2xx for everything verified — unknown event types must never
       // retry-loop, and unhandled types are intentional no-ops.
