@@ -34,7 +34,7 @@ function sanitizeVideos(raw) {
 
 export function createImporter({ db, config }) {
   function isPro(user, dbUser) {
-    return user.isAdmin || dbUser.plan === "pro";
+    return user.isAdmin || dbUser.plan === "pro" || config.betaProForAll;
   }
 
   async function startJob(user, dbUser, tier, total) {

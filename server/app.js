@@ -127,11 +127,12 @@ export function createApp({
       db.counts(req.user.id),
       db.countSummariesThisMonth(req.user.id),
     ]);
-    const pro = req.user.isAdmin || u.plan === "pro";
+    const pro = req.user.isAdmin || u.plan === "pro" || config.betaProForAll;
     res.json({
       id: u.id,
       email: u.email,
       plan: pro ? "pro" : u.plan,
+      betaPro: Boolean(config.betaProForAll && u.plan !== "pro"),
       isAdmin: req.user.isAdmin,
       tasteProfile: u.taste_profile,
       summaryQuota: config.freeSummaryQuota,
@@ -297,7 +298,7 @@ export function createApp({
       });
     }
 
-    const bypass = req.user.isAdmin || user.plan === "pro";
+    const bypass = req.user.isAdmin || user.plan === "pro" || config.betaProForAll;
     if (!bypass && monthlyUsed >= config.freeSummaryQuota) {
       return res.status(402).json({
         error: `You've used all ${config.freeSummaryQuota} free TL;DRs this month. They reset on the 1st.`,

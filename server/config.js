@@ -21,6 +21,9 @@ export function loadConfig(env = process.env) {
     // Tiers (M8): free stores the newest freeVideoCap videos and classifies
     // all of them; freeSummaryQuota is TL;DRs per calendar month. Pro's cap
     // is fair use, marketed unlimited. Caps derive from plan at request time.
+    // Beta: every account gets Pro treatment at no charge. One env var,
+    // zero data changes — ending the beta is removing it and redeploying.
+    betaProForAll: bool(env.BETA_PRO_FOR_ALL),
     freeVideoCap: Number(env.FREE_VIDEO_CAP) || 1000,
     proVideoCap: Number(env.PRO_VIDEO_CAP) || 25000,
     freeSummaryQuota: Number(env.FREE_SUMMARY_QUOTA) || 100,

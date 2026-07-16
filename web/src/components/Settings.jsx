@@ -132,14 +132,16 @@ export default function Settings({
         <h3>Plan</h3>
         <div className="settings__row">
           <p>
-            {me.plan === "pro"
+            {me.betaPro
+              ? "Beta: Pro is free for everyone right now. Paid plans arrive after the beta."
+              : me.plan === "pro"
               ? me.proEndsAt
                 ? `Pro${me.proInterval === "year" ? " (yearly)" : me.proInterval === "month" ? " (monthly)" : ""} until ${formatDate(me.proEndsAt)}. Your library stays sorted after that.`
                 : `Pro${me.proInterval === "year" ? ", billed yearly" : me.proInterval === "month" ? ", billed monthly" : ""}. Your whole backlog, unlimited TL;DRs.`
               : `Free. Your newest ${Number(me.videoCap).toLocaleString()} videos, ` +
                 `${Number(me.summariesUsed).toLocaleString()} of ${Number(me.summaryQuota).toLocaleString()} TL;DRs used this month.`}
           </p>
-          {me.plan === "pro" && !me.isAdmin ? (
+          {me.betaPro ? null : me.plan === "pro" && !me.isAdmin ? (
             <button className="btn btn--ghost" disabled={busy} onClick={managePlan}>
               Manage subscription
             </button>

@@ -107,6 +107,24 @@ describe("imports & plan caps", () => {
     await asUser(request(app).post("/api/imports"), "boss@test.dev").send(payload(2)).expect(200);
   });
 
+  it("BETA_PRO_FOR_ALL gives every account pro treatment, reversibly", async () => {
+    build({ BETA_PRO_FOR_ALL: "1" });
+    // pro cap applies to a plain free user
+    const res = await asUser(request(app).post("/api/imports")).send(payload(150)).expect(200);
+    expect(res.body.added).toBe(150); // past the 120 free cap in this config
+    expect(res.body.capped).toBe(0);
+    const me = await asUser(request(app).get("/api/me")).expect(200);
+    expect(me.body.plan).toBe("pro");
+    expect(me.body.betaPro).toBe(true);
+    expect(me.body.videoCap).toBe(25000);
+    // flag off → back to the free contract (no data damage)
+    build();
+    const after = await asUser(request(app).get("/api/me")).expect(200);
+    expect(after.body.plan).toBe("free");
+    expect(after.body.betaPro).toBe(false);
+    expect(after.body.videoCap).toBe(120);
+  });
+
   it("classify-remaining works for free users (the 402 paywall is gone)", async () => {
     await asUser(request(app).post("/api/imports")).send(payload(120)).expect(200);
     const me = await asUser(request(app).get("/api/me"));
