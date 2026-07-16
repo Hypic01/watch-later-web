@@ -55,10 +55,14 @@ export function createBilling({ db, config, polarClient }) {
     const scheduledEnd = active && sub.cancel_at_period_end
       ? (sub.ends_at ?? sub.current_period_end ?? null)
       : null;
+    const interval = sub.recurring_interval === "year" || sub.recurring_interval === "month"
+      ? sub.recurring_interval
+      : null;
     await db.setPlan(user.id, active ? "pro" : "free", {
       customerId: sub.customer_id,
       subscriptionId: active ? sub.id : null,
       endsAt: scheduledEnd,
+      interval: active ? interval : null,
     });
   }
 

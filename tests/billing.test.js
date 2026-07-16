@@ -41,6 +41,7 @@ const subscriptionEvent = (type, overrides = {}) => ({
   data: {
     id: "plr_sub_1",
     status: "active",
+    recurring_interval: "month",
     cancel_at_period_end: false,
     current_period_end: null,
     ends_at: null,
@@ -110,6 +111,7 @@ describe("webhooks", () => {
     expect(user.billing_customer_id).toBe("plr_cus_1");
     expect(user.billing_subscription_id).toBe("plr_sub_1");
     expect(user.billing_ends_at).toBeNull();
+    expect(user.billing_interval).toBe("month");
     await signedPost(event).expect(200); // Polar redelivery
     expect((await db.getUser(meId)).plan).toBe("pro");
   });
@@ -142,6 +144,7 @@ describe("webhooks", () => {
     const user = await db.getUser(meId);
     expect(user.plan).toBe("free");
     expect(user.billing_subscription_id).toBeNull();
+    expect(user.billing_interval).toBeNull();
     // board intact
     const board = await asUser(request(app).get("/api/board")).expect(200);
     expect(board.body.learn).toHaveLength(2);
@@ -165,9 +168,15 @@ describe("webhooks", () => {
     expect(res.body.willClassify).toBe(5);
   });
 
-  it("subscription.updated tracks active/unpaid transitions", async () => {
+  it("subscription.updated tracks active/unpaid transitions and plan switches", async () => {
     await signedPost(subscriptionEvent("subscription.updated")).expect(200);
     expect((await db.getUser(meId)).plan).toBe("pro");
+    // monthly → annual switch in the portal arrives as an updated event
+    await signedPost(subscriptionEvent("subscription.updated", { recurring_interval: "year" })).expect(200);
+    const switched = await db.getUser(meId);
+    expect(switched.billing_interval).toBe("year");
+    const me = await asUser(request(app).get("/api/me")).expect(200);
+    expect(me.body.proInterval).toBe("year");
     await signedPost(subscriptionEvent("subscription.updated", { status: "unpaid" })).expect(200);
     expect((await db.getUser(meId)).plan).toBe("free");
   });

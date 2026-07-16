@@ -138,6 +138,7 @@ export function createApp({
       summariesUsed,
       videoCap: pro ? config.proVideoCap : config.freeVideoCap,
       proEndsAt: u.billing_ends_at ?? null,
+      proInterval: u.billing_interval ?? null,
       counts,
       hasTaste: u.taste_profile && Object.keys(u.taste_profile).length > 0,
     });

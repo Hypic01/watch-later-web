@@ -153,6 +153,14 @@ export const MIGRATIONS = [
       UPDATE users SET video_cap = 1000 WHERE plan = 'free';
     `,
   },
+  {
+    // Which Pro plan a subscriber is on ("month" | "year"), from the
+    // subscription webhooks — Settings shows "billed monthly/yearly".
+    id: "006-billing-interval",
+    sql: `
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_interval text;
+    `,
+  },
 ];
 
 export async function migrate(q) {
