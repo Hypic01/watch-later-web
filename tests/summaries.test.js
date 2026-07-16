@@ -63,18 +63,19 @@ describe("summary cache and free meter", () => {
     expect(second.body.summary).toEqual(first.body.summary);
     expect(second.body.summariesUsed).toBe(1);
     expect(await db.getConfig("global_usage")).toEqual(usageAfterFirst);
-    expect((await db.getUser(userId)).summaries_used).toBe(1);
+    expect(await db.countSummariesThisMonth(userId)).toBe(1);
   });
 
-  it("allows exactly seven free summaries, then returns a 402 while cache still works", async () => {
+  it("allows exactly the monthly quota, then returns a 402 while cache still works", async () => {
     const videos = await addReadyVideos(userId, 8, "q");
     for (const video of videos.slice(0, 7)) {
       await asUser(request(app).post(`/api/videos/${video.id}/summary`)).expect(200);
     }
-    expect((await db.getUser(userId)).summaries_used).toBe(7);
+    expect(await db.countSummariesThisMonth(userId)).toBe(7);
 
     const blocked = await asUser(request(app).post(`/api/videos/${videos[7].id}/summary`)).expect(402);
     expect(blocked.body.upgrade).toBe(true);
+    expect(blocked.body.error).toContain("this month");
     expect(blocked.body.summariesUsed).toBe(7);
     expect(blocked.body.summaryQuota).toBe(7);
 
@@ -82,18 +83,40 @@ describe("summary cache and free meter", () => {
     expect(cached.body.cached).toBe(true);
   });
 
-  it("lets Pro users and admins bypass the free wall", async () => {
-    const [proVideo] = await addReadyVideos(userId, 1, "p");
-    await pg.query("UPDATE users SET summaries_used = 7 WHERE id = $1", [userId]);
+  it("the wall lifts when last month rolls over (calendar-month reset)", async () => {
+    const videos = await addReadyVideos(userId, 8, "r");
+    for (const video of videos.slice(0, 7)) {
+      await asUser(request(app).post(`/api/videos/${video.id}/summary`)).expect(200);
+    }
+    await asUser(request(app).post(`/api/videos/${videos[7].id}/summary`)).expect(402);
+
+    // Age every generated summary into last month: the meter resets to zero.
+    await pg.query(
+      "UPDATE summaries SET created_at = date_trunc('month', now()) - interval '1 day' WHERE user_id = $1",
+      [userId]
+    );
+    expect(await db.countSummariesThisMonth(userId)).toBe(0);
+    const fresh = await asUser(request(app).post(`/api/videos/${videos[7].id}/summary`)).expect(200);
+    expect(fresh.body.summariesUsed).toBe(1);
+  });
+
+  it("lets Pro users and admins bypass the monthly wall", async () => {
+    // Fill this month's quota with real generated summaries, then go pro:
+    // the 8th succeeds.
+    const videos = await addReadyVideos(userId, 8, "p");
+    for (const video of videos.slice(0, 7)) {
+      await asUser(request(app).post(`/api/videos/${video.id}/summary`)).expect(200);
+    }
+    await asUser(request(app).post(`/api/videos/${videos[7].id}/summary`)).expect(402);
     await db.setPlan(userId, "pro", {});
-    await asUser(request(app).post(`/api/videos/${proVideo.id}/summary`)).expect(200);
-    expect((await db.getUser(userId)).summaries_used).toBe(7);
+    await asUser(request(app).post(`/api/videos/${videos[7].id}/summary`)).expect(200);
 
     const adminId = await provision("boss@test.dev");
-    const [adminVideo] = await addReadyVideos(adminId, 1, "a");
-    await pg.query("UPDATE users SET summaries_used = 7 WHERE id = $1", [adminId]);
-    await asUser(request(app).post(`/api/videos/${adminVideo.id}/summary`), "boss@test.dev").expect(200);
-    expect((await db.getUser(adminId)).summaries_used).toBe(7);
+    const adminVideos = await addReadyVideos(adminId, 8, "a");
+    for (const video of adminVideos.slice(0, 7)) {
+      await asUser(request(app).post(`/api/videos/${video.id}/summary`), "boss@test.dev").expect(200);
+    }
+    await asUser(request(app).post(`/api/videos/${adminVideos[7].id}/summary`), "boss@test.dev").expect(200);
   });
 
   it("requires a transcript and returns a fetch hint", async () => {

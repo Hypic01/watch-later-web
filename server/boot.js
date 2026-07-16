@@ -81,10 +81,11 @@ export async function buildApp(env = process.env) {
   const mentor = llm ? createMentor({ llm, model: config.classifyModel }) : null;
   const transcripts = createTranscriptFetcher();
   let billing = null;
-  if (config.stripeSecretKey && config.stripeWebhookSecret && config.stripePriceId) {
+  if (config.polarAccessToken && config.polarWebhookSecret
+      && config.polarProductMonthlyId && config.polarProductAnnualId) {
     billing = createBilling({ db, config });
   } else {
-    console.log("[billing] Stripe env not set — upgrade flow disabled (free tier still works)");
+    console.log("[billing] Polar env not set — upgrade flow disabled (free tier still works)");
   }
 
   const app = createApp({

@@ -18,8 +18,12 @@ export function loadConfig(env = process.env) {
     chunkSize: Number(env.CHUNK_SIZE) || 25,
     batchThreshold: Number(env.BATCH_THRESHOLD) || 500,
 
-    freeVideoQuota: Number(env.FREE_VIDEO_QUOTA) || 100,
-    freeSummaryQuota: Number(env.FREE_SUMMARY_QUOTA) || 7,
+    // Tiers (M8): free stores the newest freeVideoCap videos and classifies
+    // all of them; freeSummaryQuota is TL;DRs per calendar month. Pro's cap
+    // is fair use, marketed unlimited. Caps derive from plan at request time.
+    freeVideoCap: Number(env.FREE_VIDEO_CAP) || 1000,
+    proVideoCap: Number(env.PRO_VIDEO_CAP) || 25000,
+    freeSummaryQuota: Number(env.FREE_SUMMARY_QUOTA) || 100,
     budgetUsd: Number(env.BUDGET_USD) || 100,
     importsPerHour: Number(env.IMPORTS_PER_HOUR) || 5,
 
@@ -34,9 +38,14 @@ export function loadConfig(env = process.env) {
     pollAdvanceBudgetMs: Number(env.POLL_ADVANCE_BUDGET_MS) || 8000,
     cronSecret: env.CRON_SECRET || "",
 
-    stripeSecretKey: env.STRIPE_SECRET_KEY || "",
-    stripeWebhookSecret: env.STRIPE_WEBHOOK_SECRET || "",
-    stripePriceId: env.STRIPE_PRICE_ID || "",
+    // Polar (merchant of record). All four required to enable billing; absent
+    // means the upgrade flow is off (the pre-launch state). POLAR_SERVER must
+    // be explicitly set to "production" at go-live — the default is sandbox.
+    polarAccessToken: env.POLAR_ACCESS_TOKEN || "",
+    polarWebhookSecret: env.POLAR_WEBHOOK_SECRET || "",
+    polarProductMonthlyId: env.POLAR_PRODUCT_MONTHLY_ID || "",
+    polarProductAnnualId: env.POLAR_PRODUCT_ANNUAL_ID || "",
+    polarServer: env.POLAR_SERVER === "production" ? "production" : "sandbox",
   };
 }
 

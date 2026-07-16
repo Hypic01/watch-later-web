@@ -1,7 +1,9 @@
-// Import handling + the freemium split. An import stores everything (up to
-// the per-user cap), then only min(free quota remaining, unscanned) gets a
-// classify job on the free tier; the rest stays locked behind the paywall.
-// classifyRemaining is the Pro unlock.
+// Import handling. The plan decides how much a library can HOLD (free keeps
+// the newest freeVideoCap videos, pro gets the fair-use proVideoCap) and
+// everything stored gets classified — there is no per-video paywall anymore
+// (M8). Caps derive from plan at request time, never from the vestigial
+// video_cap column, so downgrades keep everything already stored and simply
+// stop new imports beyond the free cap.
 
 const VIDEO_ID_RE = /^[\w-]{5,20}$/;
 const CONTROL_RE = new RegExp("[" + String.fromCharCode(0) + "-" + String.fromCharCode(31) + String.fromCharCode(127) + "]", "g");
@@ -62,21 +64,15 @@ export function createImporter({ db, config }) {
       }
 
       const dbUser = await db.getUser(user.id);
-      const { added, duplicates, capped } = await db.upsertFromImport(user.id, videos, dbUser.video_cap);
+      const pro = isPro(user, dbUser);
+      const cap = pro ? config.proVideoCap : config.freeVideoCap;
+      const { added, duplicates, capped } = await db.upsertFromImport(user.id, videos, cap);
       await db.createImport(user.id, source, videos.length, added);
 
+      // Everything stored gets classified, on every plan.
       const unscanned = await db.countUnscanned(user.id);
-      let tier, willClassify;
-      if (isPro(user, dbUser)) {
-        tier = "pro";
-        willClassify = unscanned;
-      } else {
-        tier = "free";
-        willClassify = Math.min(Math.max(dbUser.free_quota - dbUser.free_used, 0), unscanned);
-      }
-
       let job = null;
-      if (willClassify > 0) job = await startJob(user, dbUser, tier, willClassify);
+      if (unscanned > 0) job = await startJob(user, dbUser, pro ? "pro" : "free", unscanned);
 
       return {
         status: 200,
@@ -85,8 +81,10 @@ export function createImporter({ db, config }) {
           duplicates,
           capped,
           jobId: job?.id ?? null,
-          willClassify,
-          locked: unscanned - willClassify,
+          willClassify: unscanned,
+          // The shipped extension forwards this field numerically; nothing is
+          // ever locked anymore, so it stays 0 to avoid a coordinated release.
+          locked: 0,
         },
       };
     },
@@ -96,15 +94,12 @@ export function createImporter({ db, config }) {
         return { status: 503, body: { error: "the sorting engine isn't configured yet — check back soon" } };
       }
       const dbUser = await db.getUser(user.id);
-      if (!isPro(user, dbUser)) {
-        return { status: 402, body: { error: "sorting beyond your first 100 videos needs Pro", upgrade: true } };
-      }
       if (await db.getActiveJob(user.id)) {
         return { status: 409, body: { error: "a sort is already running — let it finish first" } };
       }
       const unscanned = await db.countUnscanned(user.id);
       if (!unscanned) return { status: 400, body: { error: "nothing left to sort" } };
-      const job = await startJob(user, dbUser, "pro", unscanned);
+      const job = await startJob(user, dbUser, isPro(user, dbUser) ? "pro" : "free", unscanned);
       return { status: 200, body: { jobId: job.id, willClassify: unscanned } };
     },
   };

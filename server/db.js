@@ -31,23 +31,20 @@ export function createDb(q) {
       await q.query("UPDATE users SET taste_profile = $2 WHERE id = $1", [id, JSON.stringify(profile)]);
     },
 
-    async setPlan(id, plan, { customerId, subscriptionId } = {}) {
+    async setPlan(id, plan, { customerId, subscriptionId, endsAt } = {}) {
       await q.query(
         `UPDATE users SET plan = $2,
-           stripe_customer_id = COALESCE($3, stripe_customer_id),
-           stripe_subscription_id = $4
+           billing_customer_id = COALESCE($3, billing_customer_id),
+           billing_subscription_id = $4,
+           billing_ends_at = $5
          WHERE id = $1`,
-        [id, plan, customerId ?? null, subscriptionId ?? null]
+        [id, plan, customerId ?? null, subscriptionId ?? null, endsAt ?? null]
       );
     },
 
-    async getUserByStripeCustomer(customerId) {
-      const { rows } = await q.query("SELECT * FROM users WHERE stripe_customer_id = $1", [customerId]);
+    async getUserByBillingCustomer(customerId) {
+      const { rows } = await q.query("SELECT * FROM users WHERE billing_customer_id = $1", [customerId]);
       return rows[0] || null;
-    },
-
-    async setStripeCustomer(id, customerId) {
-      await q.query("UPDATE users SET stripe_customer_id = $2 WHERE id = $1", [id, customerId]);
     },
 
     async deleteUser(id) {
@@ -283,12 +280,17 @@ export function createDb(q) {
       return rows[0] || null;
     },
 
-    async incrementSummariesUsed(userId) {
+    // The free TL;DR meter: summaries generated this UTC calendar month.
+    // Counting rows (instead of a counter column) makes the reset automatic
+    // on the 1st and keeps cached hits free by construction. Note: a
+    // downgraded pro's same-month rows count against the free quota —
+    // accepted fair-use behavior.
+    async countSummariesThisMonth(userId) {
       const { rows } = await q.query(
-        "UPDATE users SET summaries_used = summaries_used + 1 WHERE id = $1 RETURNING summaries_used",
+        "SELECT count(*)::int AS n FROM summaries WHERE user_id = $1 AND created_at >= date_trunc('month', now())",
         [userId]
       );
-      return rows[0]?.summaries_used ?? null;
+      return rows[0].n;
     },
 
     async setCategory(userId, videoId, category) {

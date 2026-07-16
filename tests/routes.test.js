@@ -12,7 +12,7 @@ const asUser = (r, email = "user@test.dev") => r.set("Authorization", `Bearer de
 const payload = (n, opts = {}) => ({ v: 1, source: "console", videos: vids(n), ...opts });
 
 function build(configOverrides = {}) {
-  config = loadConfig({ CHUNK_SIZE: "10", BATCH_THRESHOLD: "500", FREE_VIDEO_QUOTA: "100", ...configOverrides });
+  config = loadConfig({ CHUNK_SIZE: "10", BATCH_THRESHOLD: "500", FREE_VIDEO_CAP: "120", ...configOverrides });
   const auth = createAuth({ verify: fakeVerifier(), db, adminEmails: ["boss@test.dev"] });
   const importer = createImporter({ db, config });
   app = createApp({ db, auth, importer, config });
@@ -42,22 +42,23 @@ describe("auth coverage", () => {
   });
 });
 
-describe("imports & freemium", () => {
-  it("imports, classifies up to the free quota, locks the rest", async () => {
+describe("imports & plan caps", () => {
+  it("free imports cap at the plan limit and everything stored classifies", async () => {
     const res = await asUser(request(app).post("/api/imports")).send(payload(150)).expect(200);
-    expect(res.body.added).toBe(150);
-    expect(res.body.willClassify).toBe(100);
-    expect(res.body.locked).toBe(50);
+    expect(res.body.added).toBe(120); // FREE_VIDEO_CAP in this config
+    expect(res.body.capped).toBe(30);
+    expect(res.body.willClassify).toBe(120);
+    expect(res.body.locked).toBe(0);
     expect(res.body.jobId).toBeTruthy();
   });
 
-  it("free quota partially used → only the remainder classifies", async () => {
-    await asUser(request(app).get("/api/me")).expect(200); // provision
+  it("pro users store past the free cap", async () => {
     const me = await asUser(request(app).get("/api/me"));
-    await db.incrementFreeUsed(me.body.id, 97);
-    const res = await asUser(request(app).post("/api/imports")).send(payload(10)).expect(200);
-    expect(res.body.willClassify).toBe(3);
-    expect(res.body.locked).toBe(7);
+    await db.setPlan(me.body.id, "pro", {});
+    const res = await asUser(request(app).post("/api/imports")).send(payload(150)).expect(200);
+    expect(res.body.added).toBe(150);
+    expect(res.body.capped).toBe(0);
+    expect(res.body.willClassify).toBe(150);
   });
 
   it("re-import of the same payload adds nothing and starts no job", async () => {
@@ -106,15 +107,12 @@ describe("imports & freemium", () => {
     await asUser(request(app).post("/api/imports"), "boss@test.dev").send(payload(2)).expect(200);
   });
 
-  it("classify-remaining: 402 for free users, works for pro", async () => {
+  it("classify-remaining works for free users (the 402 paywall is gone)", async () => {
     await asUser(request(app).post("/api/imports")).send(payload(120)).expect(200);
     const me = await asUser(request(app).get("/api/me"));
     await db.finishJob((await db.getActiveJob(me.body.id)).id, "completed");
-    const res = await asUser(request(app).post("/api/jobs/classify-remaining")).expect(402);
-    expect(res.body.upgrade).toBe(true);
-    await db.setPlan(me.body.id, "pro", {});
     const ok = await asUser(request(app).post("/api/jobs/classify-remaining")).expect(200);
-    expect(ok.body.willClassify).toBe(120); // 100 still unscanned from quota + 20... total unscanned
+    expect(ok.body.willClassify).toBe(120);
   });
 });
 
@@ -164,7 +162,11 @@ describe("me & admin", () => {
   it("/api/me returns quota info; taste round-trips; delete empties", async () => {
     let me = await asUser(request(app).get("/api/me")).expect(200);
     expect(me.body.plan).toBe("free");
-    expect(me.body.freeQuota).toBe(100);
+    expect(me.body.videoCap).toBe(120); // FREE_VIDEO_CAP in this config
+    expect(me.body.summaryQuota).toBe(100);
+    expect(me.body.summariesUsed).toBe(0);
+    expect(me.body.freeQuota).toBeUndefined();
+    expect(me.body.freeUsed).toBeUndefined();
     await asUser(request(app).put("/api/me/taste")).send({ interests: ["design"], note: "hi" }).expect(200);
     me = await asUser(request(app).get("/api/me"));
     expect(me.body.tasteProfile.interests).toEqual(["design"]);

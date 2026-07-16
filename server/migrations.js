@@ -137,6 +137,22 @@ export const MIGRATIONS = [
       );
     `,
   },
+  {
+    // Polar billing (provider-neutral ids) + M8 tiers. Caps and quotas are
+    // now derived from plan at request time, so video_cap / free_quota /
+    // free_used / summaries_used remain as vestigial stats only, and the
+    // stripe_* columns are dead (they never held data). billing_ends_at
+    // powers "Pro until <date>" for scheduled cancellations.
+    id: "005-polar-tiers",
+    sql: `
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_customer_id text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_subscription_id text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_ends_at timestamptz;
+      CREATE INDEX IF NOT EXISTS idx_users_billing_customer ON users(billing_customer_id);
+      ALTER TABLE users ALTER COLUMN video_cap SET DEFAULT 1000;
+      UPDATE users SET video_cap = 1000 WHERE plan = 'free';
+    `,
+  },
 ];
 
 export async function migrate(q) {

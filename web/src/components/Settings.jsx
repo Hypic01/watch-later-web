@@ -42,6 +42,21 @@ export default function Settings({
     }
   };
 
+  const upgrade = async () => {
+    setBusy(true);
+    try {
+      const { url } = await api.checkoutUrl();
+      location.href = url;
+    } catch (e) {
+      onToast(
+        e.status === 404
+          ? "Pro isn't open yet, you're early! Everything you have stays free."
+          : e.message
+      );
+      setBusy(false);
+    }
+  };
+
   const deleteAccount = async () => {
     if (!window.confirm("Delete your account and every imported video? This cannot be undone.")) return;
     if (!window.confirm("Really delete everything?")) return;
@@ -118,14 +133,21 @@ export default function Settings({
         <div className="settings__row">
           <p>
             {me.plan === "pro"
-              ? "Pro. Your whole backlog gets sorted."
-              : `Free. Your first ${me.freeQuota} videos are sorted (${me.freeUsed} used).`}
+              ? me.proEndsAt
+                ? `Pro until ${formatDate(me.proEndsAt)}. Your library stays sorted after that.`
+                : "Pro. Your whole backlog, unlimited TL;DRs."
+              : `Free. Your newest ${Number(me.videoCap).toLocaleString()} videos, ` +
+                `${Number(me.summariesUsed).toLocaleString()} of ${Number(me.summaryQuota).toLocaleString()} TL;DRs used this month.`}
           </p>
-          {me.plan === "pro" && !me.isAdmin && (
+          {me.plan === "pro" && !me.isAdmin ? (
             <button className="btn btn--ghost" disabled={busy} onClick={managePlan}>
               Manage subscription
             </button>
-          )}
+          ) : me.plan !== "pro" ? (
+            <button className="btn btn--primary" disabled={busy} onClick={upgrade}>
+              Upgrade to Pro
+            </button>
+          ) : null}
         </div>
       </div>
 

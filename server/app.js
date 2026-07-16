@@ -123,18 +123,21 @@ export function createApp({
   // ---- me ----
   app.get("/api/me", auth.required, async (req, res) => {
     const u = await db.getUser(req.user.id);
-    const counts = await db.counts(req.user.id);
+    const [counts, summariesUsed] = await Promise.all([
+      db.counts(req.user.id),
+      db.countSummariesThisMonth(req.user.id),
+    ]);
+    const pro = req.user.isAdmin || u.plan === "pro";
     res.json({
       id: u.id,
       email: u.email,
-      plan: req.user.isAdmin ? "pro" : u.plan,
+      plan: pro ? "pro" : u.plan,
       isAdmin: req.user.isAdmin,
       tasteProfile: u.taste_profile,
-      freeQuota: u.free_quota,
-      freeUsed: u.free_used,
       summaryQuota: config.freeSummaryQuota,
-      summariesUsed: u.summaries_used,
-      videoCap: u.video_cap,
+      summariesUsed,
+      videoCap: pro ? config.proVideoCap : config.freeVideoCap,
+      proEndsAt: u.billing_ends_at ?? null,
       counts,
       hasTaste: u.taste_profile && Object.keys(u.taste_profile).length > 0,
     });
@@ -271,13 +274,14 @@ export function createApp({
   });
 
   app.post("/api/videos/:id/summary", auth.required, async (req, res) => {
-    const [detail, user] = await Promise.all([
+    const [detail, user, monthlyUsed] = await Promise.all([
       db.getVideoDetail(req.user.id, req.params.id),
       db.getUser(req.user.id),
+      db.countSummariesThisMonth(req.user.id),
     ]);
     if (!detail) return res.status(404).json({ error: "unknown video" });
-    const meter = () => ({
-      summariesUsed: user.summaries_used,
+    const meter = (used = monthlyUsed) => ({
+      summariesUsed: used,
       summaryQuota: config.freeSummaryQuota,
     });
     if (detail.summary) {
@@ -293,9 +297,9 @@ export function createApp({
     }
 
     const bypass = req.user.isAdmin || user.plan === "pro";
-    if (!bypass && user.summaries_used >= config.freeSummaryQuota) {
+    if (!bypass && monthlyUsed >= config.freeSummaryQuota) {
       return res.status(402).json({
-        error: `You have used all ${config.freeSummaryQuota} free summaries.`,
+        error: `You've used all ${config.freeSummaryQuota} free TL;DRs this month. They reset on the 1st.`,
         upgrade: true,
         ...meter(),
       });
@@ -332,7 +336,6 @@ export function createApp({
       return res.status(502).json({ error: "The librarian could not save this summary. Please try again." });
     }
 
-    if (!bypass) user.summaries_used = await db.incrementSummariesUsed(req.user.id);
     await db.addUsage({
       userId: req.user.id,
       jobId: null,
@@ -341,7 +344,8 @@ export function createApp({
       videosClassified: 0,
       costUsd: estimateCostUsd({ inputTokens: usage.input, outputTokens: usage.output, batch: false }),
     });
-    res.json({ summary: generated.summary, cached: false, ...meter() });
+    // The saved row IS the meter increment (count-of-rows this month).
+    res.json({ summary: generated.summary, cached: false, ...meter(monthlyUsed + 1) });
   });
 
   app.post("/api/videos/:id/category", auth.required, async (req, res) => {

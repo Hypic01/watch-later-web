@@ -54,7 +54,7 @@ function AuthGate() {
       <div className="authgate__card">
         <span className="brand__mark" style={{ width: 48, height: 48 }}><BoardIcon size={24} /></span>
         <h1>Watch Later Librarian</h1>
-        <p>Your Watch Later is a graveyard. Sign in and let the librarian sort it. Your first 100 videos are free.</p>
+        <p>Your Watch Later is a graveyard. Sign in and let the librarian sort it. Your newest 1,000 videos are free.</p>
         {isDevAuth ? (
           <form className="authgate__dev" onSubmit={(e) => { e.preventDefault(); if (email.includes("@")) { signInDev(email); location.reload(); } }}>
             <input type="email" placeholder="dev mode: any email" value={email}
@@ -145,10 +145,10 @@ export default function App() {
     }
     const added = Number(result.added) || 0;
     const willClassify = Number(result.willClassify) || 0;
-    const locked = Number(result.locked) || 0;
+    const capped = Number(result.capped) || 0;
     const bits = [`${added.toLocaleString()} new videos imported`];
     if (willClassify) bits.push(`sorting ${willClassify.toLocaleString()} now`);
-    if (locked) bits.push(`${locked.toLocaleString()} waiting behind Pro`);
+    if (capped) bits.push(`${capped.toLocaleString()} older videos skipped — you're at your plan's limit`);
     const availability = availabilitySummary(result);
     if (availability) bits.push(availability);
     if (result.jobId && willClassify > 0) {
@@ -190,7 +190,7 @@ export default function App() {
         clearInterval(t);
         setMe(m);
         showToast("Welcome to Pro. Sort the rest whenever you're ready ✦");
-      } else if (++tries > 15) clearInterval(t);
+      } else if (++tries > 30) clearInterval(t);
     }, 2000);
     return () => clearInterval(t);
   }, [authed, showToast]);
@@ -416,7 +416,9 @@ export default function App() {
 
   const totalVideos = Object.values(me.counts).reduce((a, b) => a + b, 0);
   const needsQuiz = !me.hasTaste && totalVideos === 0;
-  const lockedCount = ACTIVE_STATES.has(job?.state) ? 0 : me.counts.unscanned;
+  const waitingCount = ACTIVE_STATES.has(job?.state) ? 0 : me.counts.unscanned;
+  // The importer caps storage AT the plan cap, so >= fires exactly when full.
+  const atCap = me.plan !== "pro" && totalVideos >= me.videoCap;
   const connectedEmail = extensionState.status?.email?.trim().toLowerCase() || "";
   const accountEmail = me.email.trim().toLowerCase();
   const extensionMismatch = Boolean(connectedEmail && connectedEmail !== accountEmail);
@@ -585,7 +587,7 @@ export default function App() {
             <p>
               Import your Watch Later and the librarian sorts every video into five rows:
               what's worth learning from, worth watching, music, fun, and what's gone stale.
-              Your first {me.freeQuota} are free.
+              Your newest {Number(me.videoCap).toLocaleString()} videos sort free.
             </p>
             <button className="btn btn--primary" onClick={() => setView("import")}>
               <UploadIcon size={15} /> Import your Watch Later
@@ -608,8 +610,8 @@ export default function App() {
                 <p>{job.error}</p>
               </div>
             ) : null}
-            {lockedCount > 0 && (
-              <UpgradeBand me={me} lockedCount={lockedCount} onToast={showToast}
+            {(waitingCount > 0 || atCap) && (
+              <UpgradeBand me={me} waitingCount={waitingCount} atCap={atCap} onToast={showToast}
                 onJobStarted={(r) => adoptJob({
                   id: r.jobId, state: "queued", mode: null, tier: null,
                   total: Number(r.willClassify) || 0, processed: 0, failed: 0, error: null,

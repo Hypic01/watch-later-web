@@ -88,7 +88,7 @@ export default function VideoDetail({
   }, [upgradeBusy, upgradeOpen]);
 
   const summaryUsed = Number(me.summariesUsed) || 0;
-  const summaryQuota = Number(me.summaryQuota) || 7;
+  const summaryQuota = Number(me.summaryQuota) || 100;
   const freePlan = me.plan !== "pro" && !me.isAdmin;
   const atSummaryWall = freePlan && summaryUsed >= summaryQuota;
   const transcriptAvailable = Boolean(video.transcript_available);
@@ -148,7 +148,7 @@ export default function VideoDetail({
     } catch (error) {
       onToast?.(
         error.status === 404
-          ? "Pro is not open yet. You are early, and your free summaries stay yours."
+          ? "Pro is not open yet. You are early, and your monthly TL;DRs keep refilling free."
           : error.message,
       );
       setUpgradeBusy(false);
@@ -238,7 +238,7 @@ export default function VideoDetail({
           </button>
           {freePlan ? (
             <span className="detail__meter">
-              {summaryUsed.toLocaleString()} of {summaryQuota.toLocaleString()} free summaries used
+              {summaryUsed.toLocaleString()} of {summaryQuota.toLocaleString()} TL;DRs used this month
             </span>
           ) : null}
         </div>
@@ -267,8 +267,8 @@ export default function VideoDetail({
         <div className="summary__upgrade">
           <span className="upgrade__icon"><ZapIcon size={19} /></span>
           <div>
-            <b>Your free summaries are used</b>
-            <p>Upgrade to Pro for summaries across your whole library.</p>
+            <b>Your monthly TL;DRs are used</b>
+            <p>They reset on the 1st. Pro is unlimited, across your whole library.</p>
           </div>
           <button className="btn btn--primary" onClick={() => setUpgradeOpen(true)}>Upgrade to Pro</button>
         </div>

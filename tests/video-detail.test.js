@@ -29,23 +29,23 @@ describe("VideoDetail M4 actions", () => {
   it("always shows Learn, TLDR, and the free summary meter", () => {
     const html = renderToStaticMarkup(React.createElement(VideoDetail, {
       ...baseProps,
-      me: { plan: "free", isAdmin: false, summariesUsed: 2, summaryQuota: 7 },
+      me: { plan: "free", isAdmin: false, summariesUsed: 2, summaryQuota: 100 },
     }));
 
     expect(html).toContain("Learn</button>");
     expect(html).toContain("TL;DR</button>");
-    expect(html).toContain("2 of 7 free summaries used");
+    expect(html).toContain("2 of 100 TL;DRs used this month");
     expect(html).toContain("YouTube</a>");
   });
 
   it("does not show a free meter for Pro", () => {
     const html = renderToStaticMarkup(React.createElement(VideoDetail, {
       ...baseProps,
-      me: { plan: "pro", isAdmin: false, summariesUsed: 12, summaryQuota: 7 },
+      me: { plan: "pro", isAdmin: false, summariesUsed: 12, summaryQuota: 100 },
     }));
 
     expect(html).toContain("Learn</button>");
     expect(html).toContain("TL;DR</button>");
-    expect(html).not.toContain("free summaries used");
+    expect(html).not.toContain("TL;DRs used this month");
   });
 });

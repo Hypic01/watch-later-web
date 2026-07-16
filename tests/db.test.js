@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { testDb, seedUser, vids, U1, U2 } from "./helpers.js";
 
-let db;
+let db, pg;
 beforeEach(async () => {
-  ({ db } = await testDb());
+  ({ db, pg } = await testDb());
   await seedUser(db, U1);
   await seedUser(db, U2, "u2@test.dev");
 });
@@ -14,7 +14,7 @@ describe("users", () => {
     expect(a.id).toBe(U1);
     const b = await db.getUser(U1);
     expect(b.plan).toBe("free");
-    expect(b.free_quota).toBe(100);
+    expect(b.video_cap).toBe(1000); // new-user default (vestigial column)
   });
 
   it("taste profile round-trips", async () => {
@@ -23,14 +23,31 @@ describe("users", () => {
     expect(u.taste_profile.interests).toEqual(["design"]);
   });
 
-  it("plan changes via stripe identifiers", async () => {
-    await db.setStripeCustomer(U1, "cus_123");
-    await db.setPlan(U1, "pro", { customerId: "cus_123", subscriptionId: "sub_9" });
-    const u = await db.getUserByStripeCustomer("cus_123");
+  it("plan changes via billing identifiers, endsAt round-trips", async () => {
+    await db.setPlan(U1, "pro", { customerId: "plr_cus_1", subscriptionId: "plr_sub_1" });
+    const u = await db.getUserByBillingCustomer("plr_cus_1");
     expect(u.id).toBe(U1);
     expect(u.plan).toBe("pro");
+    expect(u.billing_ends_at).toBeNull();
+    await db.setPlan(U1, "pro", { subscriptionId: "plr_sub_1", endsAt: "2026-08-16T00:00:00.000Z" });
+    expect((await db.getUser(U1)).billing_ends_at).not.toBeNull();
     await db.setPlan(U1, "free", { subscriptionId: null });
-    expect((await db.getUser(U1)).plan).toBe("free");
+    const downgraded = await db.getUser(U1);
+    expect(downgraded.plan).toBe("free");
+    expect(downgraded.billing_ends_at).toBeNull();
+    expect(downgraded.billing_customer_id).toBe("plr_cus_1"); // COALESCE keeps it
+  });
+
+  it("countSummariesThisMonth counts fresh rows and ignores last month", async () => {
+    await db.upsertFromImport(U1, vids(3), 10000);
+    const [a, b2, c] = vids(3);
+    await db.saveTranscript(U1, a.id, { transcript: "t" });
+    await db.saveSummary(U1, a.id, { summary: { tldr: "x", points: ["p"], watchIf: "" }, model: "m", inputTokens: 1, outputTokens: 1 });
+    await db.saveSummary(U1, b2.id, { summary: { tldr: "y", points: ["p"], watchIf: "" }, model: "m", inputTokens: 1, outputTokens: 1 });
+    expect(await db.countSummariesThisMonth(U1)).toBe(2);
+    await pg.query("UPDATE summaries SET created_at = date_trunc('month', now()) - interval '1 day' WHERE user_id = $1 AND video_id = $2", [U1, b2.id]);
+    expect(await db.countSummariesThisMonth(U1)).toBe(1);
+    void c;
   });
 
   it("deleteUser cascades videos, imports, jobs", async () => {
