@@ -51,6 +51,13 @@ than improvising around it.
    multi-hundred-row work — 2,700 sequential INSERTs blew the 60s function limit; a resumed
    batch apply that re-ran per-row no-ops went quadratic and froze. Batch multi-row
    statements (`upsertFromImport`) or set-based skips (`pollBatchJob`'s pending set).
+13. **YouTube captions are locked behind the player's `pot` token (verified live 2026-07-15).**
+   Raw timedtext URLs return an EMPTY 200 without it — even same-origin from inside a real
+   page. `get_transcript` 400s ("Precondition check failed") for plain JSON POSTs; it needs
+   the SAPISID Authorization hash AND the `params` blob the page embeds in `ytInitialData`
+   (hand-built protobuf params are rejected). The working last resort is driving the muted
+   player itself and capturing its own caption response — see `runTranscriptProbe` in
+   `extension/src/transcript.js`. Never re-attempt raw caption fetches.
 12. **Small jobs finish inside the very request that first fetches them** (the serverless
    tick piggybacks `GET /api/jobs/current`), so the client can never rely on observing an
    active job. Give feedback optimistically — see `adoptJob` plus the ref-guarded
