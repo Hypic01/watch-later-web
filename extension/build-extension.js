@@ -92,8 +92,15 @@ if (devBuild) {
   console.log(`extension bundled (DEV: localhost enabled, do not ship) -> ${path.relative(process.cwd(), dist)}`);
   console.log("store zip skipped (never zip a dev build)");
 } else {
+  // The Web Store rejects manifests containing "key" — the store assigns the
+  // published extension its own ID; key only pins the UNPACKED dev ID. Zip a
+  // keyless manifest, then restore the keyed one so dist stays loadable with
+  // the stable dev ID.
+  const { key: _key, ...storeManifest } = distManifest;
+  await writeFile(path.join(dist, "manifest.json"), JSON.stringify(storeManifest, null, 2));
   execFileSync("/usr/bin/zip", ["-qr", zipPath, "."], { cwd: dist });
+  await writeFile(path.join(dist, "manifest.json"), JSON.stringify(distManifest, null, 2));
   console.log(`extension bundled -> ${path.relative(process.cwd(), dist)}`);
-  console.log(`store zip -> ${path.relative(process.cwd(), zipPath)}`);
+  console.log(`store zip -> ${path.relative(process.cwd(), zipPath)} (keyless manifest; the store assigns the public ID)`);
 }
-console.log(`extension ID -> ${extensionId(manifest.key)}`);
+console.log(`unpacked dev extension ID -> ${extensionId(manifest.key)}`);

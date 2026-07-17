@@ -83,6 +83,17 @@ describe("extension store build", () => {
       "https://watch-later-web.vercel.app/*",
     ]);
     expect(JSON.stringify(zippedManifest)).not.toContain("localhost");
+    // The Web Store rejects manifests containing "key" (it assigns the public
+    // ID itself); the key must survive only in dist for the unpacked dev ID.
+    expect(zippedManifest.key).toBeUndefined();
+  });
+
+  it("keeps the pinned dev key in dist even though the zip is keyless", async () => {
+    const distManifest = JSON.parse(
+      await readFile(path.join(extensionDir, "dist", "manifest.json"), "utf8"),
+    );
+    expect(typeof distManifest.key).toBe("string");
+    expect(distManifest.key.length).toBeGreaterThan(100);
   });
 
   it("fails clearly when a required icon is missing", async () => {
