@@ -12,7 +12,14 @@
       .mark { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: #ec4899; }
       h1 { margin: 0; font-size: 15px; letter-spacing: -.01em; }
       .email { min-height: 18px; margin: 16px 0 3px; color: #f9a8d4; font-size: 12px; }
-      .status { min-height: 42px; margin: 0; color: #cbd5e1; font-size: 13px; line-height: 1.45; }
+      .last-sync { min-height: 17px; margin: 0 0 8px; color: #94a3b8; font-size: 11px; }
+      .status { min-height: 38px; margin: 0; color: #cbd5e1; font-size: 13px; line-height: 1.45; }
+      .schedule { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 6px 12px; margin-top: 14px; padding: 11px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; background: rgba(255,255,255,.035); }
+      .schedule label { color: #e2e8f0; font-size: 12px; font-weight: 650; }
+      .schedule select { min-width: 118px; border: 1px solid rgba(255,255,255,.16); border-radius: 8px; padding: 7px 26px 7px 9px; background: #1e293b; color: #f8fafc; font: inherit; font-size: 12px; }
+      .schedule select:focus-visible { outline: 2px solid #f472b6; outline-offset: 2px; }
+      .schedule select:disabled { opacity: .55; }
+      .schedule-note { grid-column: 1 / -1; min-height: 15px; margin: 0; color: #94a3b8; font-size: 11px; line-height: 1.35; }
       .actions { display: grid; gap: 8px; margin-top: 14px; }
       button, a { font: inherit; }
       button { border: 0; border-radius: 999px; padding: 10px 14px; color: #fff; font-weight: 650; cursor: pointer; }
@@ -33,7 +40,17 @@
       <h1>Watch Later Librarian</h1>
     </header>
     <p class="email" data-email></p>
+    <p class="last-sync" data-last-sync>Last sync: checking.</p>
     <p class="status" data-status>Reading extension status.</p>
+    <div class="schedule">
+      <label for="auto-sync-minutes">Auto-sync</label>
+      <select id="auto-sync-minutes" data-auto-sync aria-describedby="auto-sync-note" disabled>
+        <option value="360">Every 6 hours</option>
+        <option value="1440">Daily</option>
+        <option value="0">Off</option>
+      </select>
+      <p class="schedule-note" id="auto-sync-note" data-auto-sync-note aria-live="polite">Reading auto sync setting.</p>
+    </div>
     <div class="actions">
       <button class="primary" type="button" data-sync-delta>Sync new videos</button>
       <button class="secondary" type="button" data-sync-full>Run a full sync</button>

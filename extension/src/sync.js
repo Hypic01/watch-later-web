@@ -1,4 +1,5 @@
 import { buildPayload, isWatchLaterPage } from "../../collector/collector.js";
+import { AUTO_SYNC_KEY } from "./auto-sync.js";
 import {
   COLLECT_DONE,
   COLLECT_ERROR,
@@ -76,6 +77,7 @@ export function createSyncController({
 
   const session = storage.session;
   const local = storage.local;
+  const synced = storage.sync || null;
   let activeState = null;
   let recoveryPromise = null;
   let starting = false;
@@ -156,8 +158,7 @@ export function createSyncController({
   async function finishSuccess(result) {
     const snapshot = activeState;
     if (!snapshot) return;
-    const previous = (await read(local, RESULT_KEY)) || {};
-    const lastSyncAt = result?.skipped ? previous.lastSyncAt || null : isoTime(now);
+    const lastSyncAt = isoTime(now);
     const lastResult = { ok: true, ...importResult(result) };
     await write(local, RESULT_KEY, { lastSyncAt, lastResult });
     await notify({ type: WLL_SYNC_DONE, ...importResult(result) });
@@ -332,7 +333,7 @@ export function createSyncController({
     return recoveryPromise;
   }
 
-  async function start({ mode = "delta" } = {}) {
+  async function start({ mode = "delta", promoteFirstSync = true } = {}) {
     if (!['delta', 'full'].includes(mode)) return { error: "INVALID_MODE" };
     await recover();
     if (starting || activeState?.syncing) return { started: false };
@@ -343,7 +344,9 @@ export function createSyncController({
       if (!connection?.token || !connection?.apiUrl) return { error: "NOT_CONNECTED" };
 
       const previous = (await read(local, RESULT_KEY)) || {};
-      const effectiveMode = mode === "delta" && !previous.lastSyncAt ? "full" : mode;
+      const effectiveMode = mode === "delta" && promoteFirstSync && !previous.lastSyncAt
+        ? "full"
+        : mode;
 
       const startedAt = isoTime(now);
       const runId = `${startedAt}:${++runSequence}`;
@@ -439,7 +442,7 @@ export function createSyncController({
       lastSyncAt: result.lastSyncAt || null,
       lastResult: result.lastResult || null,
       syncing: !!activeState?.syncing,
-      autoSync: false,
+      autoSync: synced ? Number(await read(synced, AUTO_SYNC_KEY)) > 0 : false,
     };
   }
 

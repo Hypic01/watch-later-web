@@ -14,6 +14,7 @@ import {
   WLL_SYNC_ERROR,
 } from "../extension/src/messages.js";
 import { ExtensionApiError, createExtensionApi } from "../extension/src/api.js";
+import { AUTO_SYNC_KEY } from "../extension/src/auto-sync.js";
 
 function fakeArea(initial = {}) {
   const data = structuredClone(initial);
@@ -95,12 +96,13 @@ function harness({
     } : {}),
   });
   const session = fakeArea(sessionState ? { [SYNC_SESSION_KEY]: sessionState } : {});
+  const sync = fakeArea();
   const published = [];
   const badges = [];
   const controller = createSyncController({
     tabs,
     scripting,
-    storage: { local, session },
+    storage: { local, session, sync },
     alarms,
     api: { importVideos: apiImpl },
     now: () => new Date("2026-07-14T12:00:00.000Z"),
@@ -114,6 +116,7 @@ function harness({
     alarms,
     local,
     session,
+    sync,
     apiImpl,
     created,
     sent,
@@ -180,6 +183,27 @@ describe("createSyncController", () => {
     });
     expect(h.created[0].active).toBe(false);
     expect(h.sent[0].message.mode).toBe("full");
+  });
+
+  it("keeps an automatic first sync in delta mode", async () => {
+    const h = harness({ firstSync: true });
+    await expect(h.controller.start({
+      mode: "delta",
+      promoteFirstSync: false,
+    })).resolves.toMatchObject({
+      started: true,
+      mode: "delta",
+    });
+    expect(h.sent[0].message.mode).toBe("delta");
+  });
+
+  it("reports whether automatic sync is enabled", async () => {
+    const h = harness();
+    await h.sync.set({ [AUTO_SYNC_KEY]: 1440 });
+    await expect(h.controller.getStatus()).resolves.toMatchObject({ autoSync: true });
+
+    await h.sync.set({ [AUTO_SYNC_KEY]: 0 });
+    await expect(h.controller.getStatus()).resolves.toMatchObject({ autoSync: false });
   });
 
   it("rejects a saved API address outside HTTP and HTTPS", async () => {
@@ -339,7 +363,31 @@ describe("createSyncController", () => {
       type: WLL_SYNC_DONE,
       skipped: true,
     }));
-    expect((await h.controller.getStatus()).lastSyncAt).toBe("2026-07-13T00:00:00.000Z");
+    expect((await h.controller.getStatus()).lastSyncAt).toBe("2026-07-14T12:00:00.000Z");
+  });
+
+  it("updates the last sync time for an already mapped skipped import", async () => {
+    const h = harness({
+      apiImpl: vi.fn(async () => ({
+        ok: true,
+        skipped: true,
+        reason: "NO_NEW_VIDEOS",
+        added: 0,
+        duplicates: 1,
+      })),
+    });
+    await h.controller.start({ mode: "delta" });
+    await finish(h);
+
+    expect(h.published.some((message) => message.type === WLL_SYNC_ERROR)).toBe(false);
+    await expect(h.controller.getStatus()).resolves.toMatchObject({
+      lastSyncAt: "2026-07-14T12:00:00.000Z",
+      lastResult: {
+        ok: true,
+        skipped: true,
+        reason: "NO_NEW_VIDEOS",
+      },
+    });
   });
 
   it("disconnects a rejected token so the website can reconnect", async () => {

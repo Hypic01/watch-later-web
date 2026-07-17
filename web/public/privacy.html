@@ -20,7 +20,7 @@
 <body>
 <main>
   <h1>Privacy</h1>
-  <p class="updated">Last updated: July 10, 2026</p>
+  <p class="updated">Last updated: July 16, 2026</p>
 
   <h2>What we store</h2>
   <ul>
@@ -28,7 +28,7 @@
     <li><b>The video metadata you import</b>: video IDs, titles, channel names, durations, and playlist positions from the Watch Later list you chose to export.</li>
     <li><b>AI classifications</b> of those videos (category, one-line reason, confidence, topics).</li>
     <li><b>Your taste profile</b>, if you filled in the optional quiz.</li>
-    <li><b>Payment status</b> if you subscribe. Card details live with Stripe; we never see them.</li>
+    <li><b>Payment status</b> if you subscribe once paid plans open. Card details live with our payment provider, a merchant of record; we never see them.</li>
   </ul>
 
   <h2>What we never touch</h2>
@@ -37,6 +37,9 @@
     <li>Your watch history, subscriptions, or any other YouTube data.</li>
     <li>Your playlists themselves. We never modify anything on YouTube.</li>
   </ul>
+
+  <h2>The Chrome extension</h2>
+  <p>The extension reads your YouTube Watch Later list only when you sync, from your own signed in browser. It sends video titles, channels, durations, and caption text to your own Watch Later Librarian account and nowhere else. Your access token is stored locally in your browser. The extension never reads other sites, never collects browsing history, and never sells or shares data.</p>
 
   <h2>How classification works</h2>
   <p>Video titles and metadata are sent to Anthropic's Claude API to be sorted into categories. Anthropic does not train on this data. No other third parties see your library.</p>
