@@ -7,6 +7,12 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const iconSizes = [16, 48, 128];
+// Derived from the source manifest, not hardcoded: the store requires a version bump
+// on every upload, and this suite asserts packaging rules, not a specific number.
+const sourceManifest = JSON.parse(
+  await readFile(path.join(root, "extension", "manifest.json"), "utf8"),
+);
+const { version } = sourceManifest;
 
 describe("extension store build", () => {
   let workspace;
@@ -16,7 +22,7 @@ describe("extension store build", () => {
   beforeAll(async () => {
     workspace = await mkdtemp(path.join(os.tmpdir(), "wll-extension-build-"));
     extensionDir = path.join(workspace, "extension");
-    zipPath = path.join(extensionDir, "watch-later-librarian-sync-1.0.0.zip");
+    zipPath = path.join(extensionDir, `watch-later-librarian-sync-${version}.zip`);
 
     await Promise.all([
       cp(path.join(root, "extension"), extensionDir, { recursive: true }),
@@ -38,10 +44,10 @@ describe("extension store build", () => {
     if (workspace) await rm(workspace, { recursive: true, force: true });
   });
 
-  it("ships the 1.0.0 production manifest with only the production origin", async () => {
+  it("ships the production manifest with only the production origin", async () => {
     const manifest = JSON.parse(await readFile(path.join(extensionDir, "dist", "manifest.json"), "utf8"));
 
-    expect(manifest.version).toBe("1.0.0");
+    expect(manifest.version).toBe(version);
     expect(manifest.permissions).toEqual(["scripting", "storage", "alarms"]);
     expect(manifest.host_permissions).toEqual(["https://www.youtube.com/*"]);
     expect(manifest.externally_connectable.matches).toEqual([

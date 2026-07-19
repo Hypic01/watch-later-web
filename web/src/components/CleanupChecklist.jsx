@@ -11,7 +11,7 @@ export default function CleanupChecklist() {
       <p className="history__hint">
         <HistoryIcon size={15} />
         Everything here is dealt with, safe to remove from your real Watch Later on YouTube.
-        One-click bulk removal is coming with the browser extension.
+        The extension never changes your playlist, so this last step stays yours.
       </p>
       <table>
         <thead>
