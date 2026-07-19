@@ -11,7 +11,9 @@
   --color-surface-raised: #273549;
   --color-foreground: #F8FAFC;
   --color-muted: #94A3B8;
-  --color-faint: #64748B;
+  /* #64748B measured 3.75:1 on the page and 3.07:1 on card surfaces, under the 4.5:1
+     floor. This passes on both (5.91 / 4.84) and still reads dimmer than --color-muted. */
+  --color-faint: #8496AD;
   --color-border: rgba(255, 255, 255, 0.08);
   --color-border-strong: rgba(255, 255, 255, 0.16);
   --color-destructive: #F87171;
@@ -99,10 +101,20 @@ button { font-family: inherit; cursor: pointer; }
 .topbar__spacer { flex: 1; }
 @media (max-width: 760px) { .brand h1 { display: none; } }
 
+/* Below ~620px the action buttons overran the viewport and clipped Settings past
+   the right edge, making it unreachable on a phone. Wrapping guarantees every
+   control stays on screen: the spacer would otherwise hold a full-width gap open
+   across the wrap, and the stat is informational so it drops to its own line. */
+@media (max-width: 620px) {
+  .topbar { flex-wrap: wrap; row-gap: var(--space-2); }
+  .topbar__spacer { display: none; }
+  .topbar .wl-stat { order: 5; flex: 1 1 100%; white-space: normal; }
+}
+
 .btn {
   display: inline-flex; align-items: center; gap: var(--space-2);
   border: 1px solid transparent; border-radius: var(--radius-pill);
-  padding: 9px 16px; font-size: 13.5px; font-weight: 600;
+  padding: 9px 16px; font-size: 13.5px; font-weight: 600; white-space: nowrap;
   transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease),
     transform 120ms var(--ease), box-shadow var(--speed) var(--ease);
 }
@@ -274,7 +286,7 @@ button { font-family: inherit; cursor: pointer; }
 .filters__group { display: flex; align-items: flex-start; gap: var(--space-4); }
 .filters__label {
   flex: 0 0 52px; padding: 9px 0;
-  font-family: var(--font-heading); font-size: 10.5px; font-weight: 600;
+  font-family: var(--font-heading); font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: .09em; color: var(--color-faint);
 }
 .filters__items { display: flex; flex-wrap: wrap; gap: var(--space-2); min-width: 0; }

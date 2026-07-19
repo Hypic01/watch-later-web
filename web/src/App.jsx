@@ -539,7 +539,7 @@ export default function App() {
           aria-label="Cleanup checklist">
           {view === "cleanup" ? <><BoardIcon size={15} /> Board</> : <><HistoryIcon size={15} /> Cleanup</>}
         </button>
-        <button className="btn btn--ghost" onClick={() => { setFocus(null); setView("settings"); }} aria-label="Settings">
+        <button className="btn btn--ghost" onClick={() => { setFocus(null); setView("settings"); }} aria-label="Settings" title="Settings">
           <SettingsIcon size={15} />
         </button>
       </header>

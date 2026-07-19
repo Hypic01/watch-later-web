@@ -43,7 +43,7 @@ export default function VideoCard({ video, onMove, onDismiss, onDone, onOpenDeta
           </button>
           <div className="card__menuwrap">
             <button className="card__kebab" aria-haspopup="menu" aria-expanded={menuOpen}
-              onClick={() => setMenuOpen((o) => !o)} aria-label="More actions">
+              onClick={() => setMenuOpen((o) => !o)} aria-label="More actions" title="More actions">
               <MoreIcon size={14} />
             </button>
             {menuOpen && (

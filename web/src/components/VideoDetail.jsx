@@ -51,6 +51,8 @@ export default function VideoDetail({
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeBusy, setUpgradeBusy] = useState(false);
   const intentDoneRef = useRef(false);
+  const upgradeCardRef = useRef(null);
+  const backRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -78,14 +80,60 @@ export default function VideoDetail({
     return () => { active = false; };
   }, [preview.id]);
 
+  // Read inside the trap effect without re-running it: keying the effect on upgradeBusy
+  // would tear down and rebuild the trap the moment Upgrade is pressed, yanking focus
+  // mid-click.
+  const upgradeBusyRef = useRef(upgradeBusy);
+  useEffect(() => { upgradeBusyRef.current = upgradeBusy; }, [upgradeBusy]);
+
+  // aria-modal tells a screen reader the background is inert, but it does not move or
+  // contain real focus. Without this, opening the dialog leaves focus stranded behind
+  // the overlay and Tab walks into the page underneath it.
   useEffect(() => {
     if (!upgradeOpen) return undefined;
+    const card = upgradeCardRef.current;
+    const previouslyFocused = document.activeElement;
+    const focusable = () => Array.from(
+      card?.querySelectorAll("button:not([disabled]), a[href], input, select, textarea, [tabindex]:not([tabindex='-1'])") || [],
+    ).filter((el) => el.offsetParent !== null);
+
+    focusable()[0]?.focus();
+
     const onKeyDown = (event) => {
-      if (event.key === "Escape" && !upgradeBusy) setUpgradeOpen(false);
+      if (event.key === "Escape" && !upgradeBusyRef.current) {
+        setUpgradeOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      // Wrap at both ends so focus can never leave the dialog.
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
+
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [upgradeBusy, upgradeOpen]);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      // Opening Learn from a card navigates here, which unmounts the button that was
+      // focused. Calling focus() on a detached node silently does nothing and drops
+      // focus to <body>, losing the keyboard user's place, so fall back to this view's
+      // own Back control whenever the original opener is gone.
+      // document.body satisfies isConnected but is not a real focus target, so treat it
+      // as "no opener" too, otherwise focus() silently no-ops and the user is stranded.
+      const restorable = previouslyFocused instanceof HTMLElement
+        && previouslyFocused.isConnected
+        && previouslyFocused !== document.body;
+      (restorable ? previouslyFocused : backRef.current)?.focus();
+    };
+  }, [upgradeOpen]);
 
   const summaryUsed = Number(me.summariesUsed) || 0;
   const summaryQuota = Number(me.summaryQuota) || 100;
@@ -197,7 +245,7 @@ export default function VideoDetail({
   return (
     <section className="detail" style={{ "--row-tint": rowMeta?.tint }}>
       <header className="catview__header">
-        <button className="btn btn--ghost" onClick={onBack}>
+        <button className="btn btn--ghost" ref={backRef} onClick={onBack}>
           <ArrowLeftIcon size={15} /> Back
         </button>
       </header>
@@ -301,7 +349,7 @@ export default function VideoDetail({
         <div className="modal" role="presentation" onMouseDown={(event) => {
           if (event.target === event.currentTarget && !upgradeBusy) setUpgradeOpen(false);
         }}>
-          <div className="modal__card" role="dialog" aria-modal="true" aria-labelledby="learn-upgrade-title">
+          <div className="modal__card" ref={upgradeCardRef} role="dialog" aria-modal="true" aria-labelledby="learn-upgrade-title">
             <button className="modal__close" onClick={() => setUpgradeOpen(false)}
               disabled={upgradeBusy} aria-label="Close"><XIcon size={17} /></button>
             <span className="modal__mark"><LearnIcon size={22} /></span>
