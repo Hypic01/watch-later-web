@@ -129,19 +129,21 @@ export default function ImportPanel({
     </>
   );
 
+  // On Chromium the extension is the recommended path, so the console collector
+  // collapses into a disclosure. Everywhere else the extension cannot be installed
+  // at all, so pasting IS the path and stays open.
+  const canUseExtension = Boolean(extension?.isChromium);
+
+  const lead = extensionConnected
+    ? "Your extension is ready. Sync your complete Watch Later directly from your browser."
+    : canUseExtension
+      ? "Add the Chrome extension and your whole Watch Later syncs in one click. You can still paste it in yourself if you'd rather not install anything."
+      : "YouTube doesn't let any app read your Watch Later directly, so you export it yourself, in your own browser. Large libraries can take a few minutes. Nothing to install.";
+
   return (
     <div className="importer">
       <h2>Import your Watch Later</h2>
-      {extensionConnected ? (
-        <p>
-          Your extension is ready. Sync your complete Watch Later directly from your browser.
-        </p>
-      ) : (
-        <p>
-          YouTube doesn't let any app read your Watch Later directly, so you export it
-          yourself, in your own browser. Large libraries can take a few minutes. Nothing to install.
-        </p>
-      )}
+      <p>{lead}</p>
       {extensionConnected ? null : (
         <ExtensionConnection extension={extension} onConnect={onConnectExtension}
           busy={extensionBusy} surface="import" />
@@ -160,10 +162,15 @@ export default function ImportPanel({
             </button>
           </section>
           <details className="importer__manual">
-            <summary>No extension? Paste manually</summary>
+            <summary>Import manually instead</summary>
             {manualImport}
           </details>
         </>
+      ) : canUseExtension ? (
+        <details className="importer__manual">
+          <summary>Prefer not to install? Paste manually</summary>
+          {manualImport}
+        </details>
       ) : manualImport}
     </div>
   );

@@ -41,6 +41,9 @@
     nav b::after { content: '_'; color: var(--pink); animation: blink 1.3s steps(2,start) infinite; }
     @keyframes blink { 50% { opacity: 0; } }
     nav .spacer { flex: 1; }
+    .nav-link { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 180ms var(--ease); }
+    .nav-link:hover { color: var(--fg); }
+    @media (max-width: 520px) { .nav-link { display: none; } }
     .btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 999px; padding: 10px 20px; font-size: 14px; font-weight: 600; text-decoration: none; transition: all 180ms var(--ease); cursor: pointer; }
     .btn-primary { background: var(--pink-strong); color: #fff; }
     .btn-primary:hover { background: var(--pink); box-shadow: 0 4px 22px rgba(236,72,153,.4); }
@@ -109,6 +112,7 @@
       </span>
       <b>watch-later-librarian</b>
       <span class="spacer"></span>
+      <a class="nav-link" href="#how">How it works</a>
       <a class="btn btn-ghost" href="/app">Sign in</a>
     </nav>
 
@@ -121,7 +125,10 @@
       </p>
       <div class="cta">
         <a class="btn btn-primary" href="/app">Sort my Watch Later</a>
-        <a class="btn btn-ghost" href="#how">How it works</a>
+        <a class="btn btn-ghost" href="https://chromewebstore.google.com/detail/watch-later-librarian-syn/iggeklmapgdaknfdblkhefnfaflbojeg" target="_blank" rel="noreferrer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+          Add to Chrome
+        </a>
       </div>
       <div class="fine">your newest 1,000 videos free · 100 TL;DRs a month · your YouTube account is never touched</div>
 
@@ -165,11 +172,12 @@
       <div class="steps">
         <div class="step">
           <span class="n">01</span>
-          <h3>Export your list, yourself</h3>
+          <h3>Add the Chrome extension</h3>
           <p>
-            YouTube blocks apps from reading Watch Later, so you run a small collector in
-            your own browser. It reads the playlist through YouTube and copies the result
-            to your clipboard. Guided, nothing installed. Large lists can take several minutes.
+            YouTube blocks apps from reading Watch Later, so the reading happens in your own
+            browser. Install the extension, sign in, and your whole list syncs in one click.
+            On Chrome, Edge, Brave, and Arc. On any other browser you can paste your list in
+            by hand instead. Large lists can take several minutes.
           </p>
         </div>
         <div class="step">
@@ -183,11 +191,11 @@
         </div>
         <div class="step">
           <span class="n">03</span>
-          <h3>Clean up with confidence</h3>
+          <h3>Clean up, and stay clean</h3>
           <p>
-            Mark videos done or dismiss the dead weight. You get a checklist of everything
-            that's safe to remove from the real playlist. One-click bulk removal ships
-            with the browser extension soon.
+            Mark videos done or dismiss the dead weight, and you get a checklist of everything
+            that's safe to remove from the real playlist. From then on the extension files
+            new saves on its own, so your library never rots back into a graveyard.
           </p>
         </div>
       </div>
@@ -231,8 +239,9 @@
       <h2>Your account stays yours</h2>
       <div class="privacy">
         <p>
-          We never see your YouTube password, cookies, or account. The collector runs in
-          <b> your</b> browser and only reads the playlist page you're looking at.
+          We never see your YouTube password, cookies, or account. The extension runs in
+          <b> your</b> browser, asks for access to youtube.com and nothing else, and only
+          reads your Watch Later playlist.
           What we store: your email and the video titles you chose to import.
           What we never do: modify your playlists, read your watch history, or sell data.
           Delete everything with one button, any time. <a href="/privacy.html">The full privacy page</a> is a two-minute read.

@@ -1,5 +1,6 @@
 import React from "react";
-import { CheckIcon, SyncIcon } from "./icons.jsx";
+import { CHROME_STORE_URL } from "../lib.js";
+import { CheckIcon, ExternalIcon, SyncIcon } from "./icons.jsx";
 
 export default function ExtensionConnection({
   extension,
@@ -15,9 +16,12 @@ export default function ExtensionConnection({
       <section className="extension-card">
         <span className="extension-card__icon"><SyncIcon size={18} /></span>
         <div className="extension-card__copy">
-          <strong>Get the Chrome extension for one click sync</strong>
-          <p>Chrome Web Store access is coming soon. The browser collector below works now.</p>
+          <strong>Sync in one click with the Chrome extension</strong>
+          <p>It reads your Watch Later in the background, then files new saves for you automatically.</p>
         </div>
+        <a className="btn btn--primary" href={CHROME_STORE_URL} target="_blank" rel="noreferrer">
+          <ExternalIcon size={14} /> Add to Chrome
+        </a>
       </section>
     );
   }

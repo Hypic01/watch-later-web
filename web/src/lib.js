@@ -1,3 +1,9 @@
+// The published Chrome Web Store listing. The extension's own ID is configured
+// separately (VITE_EXTENSION_ID) because detection and installation are different
+// concerns: this URL is where a user without the extension goes.
+export const CHROME_STORE_URL =
+  "https://chromewebstore.google.com/detail/watch-later-librarian-syn/iggeklmapgdaknfdblkhefnfaflbojeg";
+
 export const SORTS = {
   "added-new": { label: "Added: newest", fn: (a, b) => (a.playlist_position ?? 1e9) - (b.playlist_position ?? 1e9) },
   "added-old": { label: "Added: oldest", fn: (a, b) => (b.playlist_position ?? -1) - (a.playlist_position ?? -1) },
