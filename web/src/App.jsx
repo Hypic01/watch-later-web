@@ -515,7 +515,7 @@ export default function App() {
       <header className="topbar">
         <button className="brand" onClick={() => { setFocus(null); setView("board"); }} aria-label="Back to the board">
           <span className="brand__mark"><BoardIcon size={18} /></span>
-          <h1>watch-later-librarian</h1>
+          <h1>The Watch Later Librarian</h1>
         </button>
         <span className={`plan-badge plan-badge--${me.plan}`}>{me.plan}</span>
         <div className="topbar__spacer" />

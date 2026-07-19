@@ -3,279 +3,279 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Watch Later Librarian — finally sort your YouTube Watch Later</title>
-  <meta name="description" content="Your Watch Later is a graveyard of saved videos. The librarian reads your whole backlog and sorts it into five rows so you can actually deal with it. Your newest 1,000 videos sorted free, with 100 TL;DR summaries a month." />
-  <meta name="theme-color" content="#0F172A" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23EC4899'/%3E%3Cpath d='M9 10h14M9 16h14M9 22h9' stroke='white' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <title>The Watch Later Librarian — finally sort your YouTube Watch Later</title>
+  <meta name="description" content="Your Watch Later is a graveyard of saved videos. The librarian reads your whole backlog and files every video on one of five shelves, with the reason written on the card. Your newest 1,000 videos sorted free, with 100 summaries a month." />
+  <meta name="theme-color" content="#12110F" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='5' fill='%2312110F'/%3E%3Crect x='6' y='7' width='7' height='18' rx='1' fill='none' stroke='%23C9A227' stroke-width='1.8'/%3E%3Crect x='16' y='7' width='7' height='18' rx='1' fill='none' stroke='%23C9A227' stroke-width='1.8'/%3E%3Cpath d='M6 13h7M16 13h7' stroke='%23C9A227' stroke-width='1.8'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
-    :root {
-      --pink: #EC4899; --pink-strong: #DB2777; --pink-soft: #F9A8D4;
-      --blue: #2563EB; --blue-soft: #93C5FD;
-      --bg: #0F172A; --surface: #1E293B; --raised: #273549;
-      --fg: #F8FAFC; --muted: #94A3B8; --faint: #8496AD;
-      --border: rgba(255,255,255,.08); --border-strong: rgba(255,255,255,.16);
-      --green: #34D399; --purple: #A78BFA; --yellow: #FBBF24; --lblue: #60A5FA; --lpink: #F472B6;
-      /* Two deliberate content widths instead of the four the page had grown
-         (1060 / 880 / 720 / 720): full-width for grids and the board, a narrower
-         measure for prose blocks so text keeps a readable line length. */
-      --w-full: 1060px; --w-prose: 760px;
-      --mono: 'Fira Code', ui-monospace, monospace;
-      --sans: 'Fira Sans', -apple-system, sans-serif;
-      --ease: cubic-bezier(.2,.7,.3,1);
+    /* ---- Tokens: mirrors web/src/styles.css so the site and the app are one system ---- */
+    :root{
+      --background:#12110F; --foreground:#F4EFE6;
+      --card:#1A1815; --popover:#221F1B; --secondary:#262320;
+      --primary:#C9A227; --primary-hover:#DFBE5C; --primary-foreground:#17130A;
+      --muted:#A89C8A; --faint:#968A79;
+      --border:rgba(244,239,230,.10); --border-strong:rgba(244,239,230,.20);
+      --success:#8FB08A;
+      --cat-learn:#D4A574; --cat-watch:#7FA5C4; --cat-music:#8FB08A;
+      --cat-fun:#C08BA8; --cat-outdated:#9A9083;
+      --w-full:1120px; --w-prose:780px;
+      --display:'Fraunces',Georgia,serif;
+      --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+      --mono:'JetBrains Mono',ui-monospace,monospace;
+      --r-sm:4px; --r-md:7px; --r-lg:11px;
+      --ease:cubic-bezier(.2,.7,.3,1);
     }
-    * { box-sizing: border-box; margin: 0; }
-    html { color-scheme: dark; scroll-behavior: smooth; }
-    body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
-    body::before {
-      content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-      background:
-        radial-gradient(1000px 520px at 85% -10%, rgba(236,72,153,.11), transparent 62%),
-        radial-gradient(900px 480px at -10% -5%, rgba(37,99,235,.11), transparent 60%);
+    *{box-sizing:border-box;margin:0}
+    html{color-scheme:dark;scroll-behavior:smooth}
+    body{background:var(--background);color:var(--foreground);font-family:var(--sans);font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
+    /* One warm light source, plus a paper grain, instead of two coloured blooms. */
+    body::before{content:'';position:fixed;inset:0;z-index:-2;pointer-events:none;
+      background:radial-gradient(1100px 560px at 50% -12%,rgba(201,162,39,.11),transparent 64%)}
+    body::after{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.045;
+      background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E")}
+    a{color:inherit}
+    .wrap{max-width:var(--w-full);margin:0 auto;padding:0 28px}
+    :focus-visible{outline:2px solid var(--primary);outline-offset:3px;border-radius:var(--r-sm)}
+
+    .eyebrow{font-family:var(--mono);font-size:11px;font-weight:500;letter-spacing:.2em;text-transform:uppercase;color:var(--primary)}
+
+    /* ---- Nav ---- */
+    nav{display:flex;align-items:center;gap:18px;padding:24px 0;border-bottom:1px solid var(--border)}
+    .seal{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;flex:0 0 auto;
+      color:var(--primary);border:1px solid color-mix(in srgb,var(--primary) 42%,transparent);
+      background:color-mix(in srgb,var(--primary) 9%,transparent)}
+    nav b{font-family:var(--display);font-size:19px;font-weight:500;letter-spacing:.004em;white-space:nowrap}
+    /* The full wordmark is long. Tighten the row rather than drop the brand name:
+       at 375px this leaves ~30px of slack instead of overflowing by 31px. */
+    @media(max-width:480px){
+      nav{gap:10px;padding:18px 0}
+      nav b{font-size:15px}
+      nav .btn{padding:9px 13px;font-size:13px}
+      .seal{width:30px;height:30px}
     }
-    a { color: inherit; }
-    .wrap { max-width: var(--w-full); margin: 0 auto; padding: 0 24px; }
+    nav .sp{flex:1}
+    .nav-link{color:var(--muted);text-decoration:none;font-size:14px;transition:color 180ms var(--ease)}
+    .nav-link:hover{color:var(--foreground)}
+    @media(max-width:560px){.nav-link{display:none}}
 
-    nav { display: flex; align-items: center; gap: 12px; padding: 18px 0; }
-    .mark { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: linear-gradient(135deg, var(--pink), var(--blue) 120%); }
-    .mark svg { display: block; }
-    nav b { font-family: var(--mono); font-size: 15px; letter-spacing: -.02em; white-space: nowrap; }
-    @media (max-width: 420px) { nav b { font-size: 13px; } }
-    nav b::after { content: '_'; color: var(--pink); animation: blink 1.3s steps(2,start) infinite; }
-    @keyframes blink { 50% { opacity: 0; } }
-    nav .spacer { flex: 1; }
-    .nav-link { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 180ms var(--ease); }
-    .nav-link:hover { color: var(--fg); }
-    @media (max-width: 520px) { .nav-link { display: none; } }
-    .btn { display: inline-flex; align-items: center; gap: 8px; border: 1px solid transparent; border-radius: 999px; padding: 10px 20px; font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; transition: all 180ms var(--ease); cursor: pointer; }
-    .btn-primary { background: var(--pink-strong); color: #fff; }
-    .btn-primary:hover { background: var(--pink); box-shadow: 0 4px 22px rgba(236,72,153,.4); }
-    .btn-ghost { background: var(--surface); border-color: var(--border); color: var(--fg); }
-    .btn-ghost:hover { background: var(--raised); border-color: var(--border-strong); }
+    .btn{display:inline-flex;align-items:center;gap:9px;border:1px solid transparent;border-radius:var(--r-md);
+      padding:11px 20px;font-size:14px;font-weight:500;text-decoration:none;white-space:nowrap;cursor:pointer;
+      transition:background 200ms var(--ease),border-color 200ms var(--ease),box-shadow 200ms var(--ease),transform 120ms var(--ease)}
+    .btn:active{transform:scale(.98)}
+    .btn-primary{background:var(--primary);color:var(--primary-foreground);font-weight:600}
+    .btn-primary:hover{background:var(--primary-hover);box-shadow:0 6px 22px rgba(201,162,39,.28)}
+    .btn-ghost{background:var(--secondary);border-color:var(--border);color:var(--foreground)}
+    .btn-ghost:hover{background:var(--popover);border-color:var(--border-strong)}
 
-    .hero { padding: 72px 0 40px; text-align: center; }
-    .hero h1 { font-family: var(--mono); font-size: clamp(30px, 5.4vw, 52px); line-height: 1.12; letter-spacing: -.03em; font-weight: 700; }
-    .hero h1 em { font-style: normal; background: linear-gradient(100deg, var(--pink-soft), var(--blue-soft)); -webkit-background-clip: text; background-clip: text; color: transparent; }
-    .hero > p { color: var(--muted); font-size: 18px; max-width: 58ch; margin: 20px auto 0; }
-    .hero .cta { margin-top: 32px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-    .hero .fine { margin-top: 14px; color: var(--faint); font-size: 13px; font-family: var(--mono); }
+    /* ---- Hero ---- */
+    .hero{padding:96px 0 24px;text-align:center}
+    .hero h1{font-family:var(--display);font-weight:300;font-size:clamp(40px,7vw,78px);line-height:1.04;letter-spacing:-.015em}
+    .hero h1 em{font-style:italic;font-weight:400;color:var(--primary-hover)}
+    .hero .sub{color:var(--muted);font-size:17.5px;max-width:56ch;margin:26px auto 0;line-height:1.7}
+    .cta{margin-top:36px;display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+    .fine{margin-top:20px;color:var(--faint);font-family:var(--mono);font-size:11.5px;letter-spacing:.03em}
 
-    /* board mock */
-    .mock { margin: 56px auto 0; max-width: 100%; background: var(--surface); border: 1px solid var(--border-strong); border-radius: 16px; padding: 22px; box-shadow: 0 30px 80px rgba(0,0,0,.5); text-align: left; }
-    .mock-row { display: flex; align-items: center; gap: 12px; padding: 11px 6px; border-bottom: 1px solid var(--border); }
-    .mock-row:last-child { border-bottom: 0; }
-    .mock-icon { width: 26px; height: 26px; border-radius: 7px; flex: 0 0 auto; display: grid; place-items: center; font-family: var(--mono); font-size: 12px; font-weight: 700; }
-    .mock-name { font-family: var(--mono); font-size: 13px; font-weight: 600; flex: 0 0 172px; }
-    .mock-count { font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 1px 8px; border-radius: 999px; }
-    .mock-cards { display: flex; gap: 8px; flex: 1; overflow: hidden; justify-content: flex-end; }
-    .mock-card { width: 74px; height: 42px; border-radius: 7px; background: var(--raised); border: 1px solid var(--border); position: relative; overflow: hidden; flex: 0 0 auto; }
-    .mock-card::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 7px; height: 4px; border-radius: 2px; background: var(--border-strong); }
-    .mock-card::before { content: ''; position: absolute; left: 8px; top: 7px; right: 22px; height: 4px; border-radius: 2px; background: var(--tint, var(--border-strong)); opacity: .8; }
-    @media (max-width: 720px) { .mock-cards { display: none; } .mock-name { flex: 1; } }
+    /* ---- The catalogue: the product's actual idea, made visible ---- */
+    .cat{margin:66px auto 0;background:var(--card);border:1px solid var(--border);border-radius:var(--r-lg);
+      box-shadow:0 40px 90px rgba(0,0,0,.5);text-align:left;overflow:hidden}
+    .cat__head{display:flex;align-items:center;gap:11px;padding:13px 22px;border-bottom:1px solid var(--border);background:var(--popover)}
+    .cat__head span{font-family:var(--mono);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+    .cat__dot{width:7px;height:7px;border-radius:50%;background:var(--primary);flex:0 0 auto}
+    .shelf{display:flex;align-items:center;gap:20px;padding:18px 22px;border-bottom:1px solid var(--border);transition:background 220ms var(--ease)}
+    .shelf:last-child{border-bottom:0}
+    .shelf:hover{background:rgba(201,162,39,.045)}
+    .shelf__tab{width:4px;align-self:stretch;border-radius:2px;background:var(--tint);flex:0 0 auto;min-height:34px}
+    .shelf__name{font-family:var(--display);font-size:21px;font-weight:500;flex:0 0 236px;letter-spacing:.004em}
+    .shelf__desc{color:var(--faint);font-family:var(--display);font-style:italic;font-size:14.5px;flex:1}
+    .shelf__n{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;
+      padding:3px 11px;border:1px solid var(--border);border-radius:var(--r-sm)}
+    @media(max-width:800px){.shelf__desc{display:none}.shelf__name{flex:1;font-size:18px}}
 
-    section { padding: 72px 0 0; }
-    .kicker { font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--pink-soft); }
-    section h2 { font-family: var(--mono); font-size: clamp(22px, 3.4vw, 32px); letter-spacing: -.02em; margin-top: 10px; }
-    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 32px; }
-    .step { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
-    .step .n { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--pink-soft); }
-    .step h3 { font-size: 17px; margin: 10px 0 8px; }
-    .step p { color: var(--muted); font-size: 14.5px; }
-    .step code { font-family: var(--mono); font-size: 12.5px; background: var(--raised); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+    section{padding:104px 0 0}
+    section h2{font-family:var(--display);font-weight:300;font-size:clamp(29px,4.4vw,44px);margin-top:14px;letter-spacing:-.012em}
+    .lede{color:var(--muted);max-width:60ch;margin-top:16px;font-size:16.5px}
 
-    .pricing { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 32px; max-width: var(--w-prose); }
-    .plan { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; display: flex; flex-direction: column; gap: 6px; }
-    .plan.pro { border-color: color-mix(in srgb, var(--pink) 45%, var(--border)); background: linear-gradient(180deg, color-mix(in srgb, var(--pink) 9%, var(--surface)), var(--surface)); }
-    .plan h3 { font-family: var(--mono); font-size: 15px; text-transform: uppercase; letter-spacing: .08em; }
-    .plan .price { font-family: var(--mono); font-size: 34px; font-weight: 700; letter-spacing: -.02em; margin: 6px 0; }
-    .plan .price-alt { color: var(--muted, #94a3b8); font-size: 13px; margin: -6px 0 0; }
-    /* The beta line is a status, not a third price. Setting it apart stops the card
-       from reading as three competing numbers stacked on top of each other. */
-    .plan .price-note {
-      margin: 12px 0 2px; padding: 8px 12px; font-size: 12.5px; color: var(--fg);
-      border-radius: 9px; border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
-      background: color-mix(in srgb, var(--green) 10%, transparent);
-    }
-    .plan .price-note b { color: var(--green); }
-    .plan .price span { font-size: 14px; color: var(--muted); font-weight: 500; }
-    .plan ul { list-style: none; padding: 0; margin: 14px 0 18px; color: var(--muted); font-size: 14.5px; display: flex; flex-direction: column; gap: 9px; }
-    /* The check was glued to the label because repeated spaces collapse in HTML.
-       Grid gives the marker its own column so every line wraps to a hanging indent. */
-    .plan li { display: grid; grid-template-columns: 16px 1fr; gap: 8px; align-items: start; }
-    .plan li::before { content: '✓'; color: var(--green); font-weight: 700; }
-    .plan .btn { justify-content: center; margin-top: auto; }
-    .beta-note { color: var(--faint); font-size: 13px; margin-top: 14px; font-family: var(--mono); }
+    /* ---- Steps: a ruled ledger, not three floating cards ---- */
+    .steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));margin-top:46px;border-top:1px solid var(--border)}
+    .step{padding:32px 30px 36px;border-right:1px solid var(--border);border-bottom:1px solid var(--border)}
+    .step:last-child{border-right:0}
+    .step .n{font-family:var(--display);font-size:32px;font-weight:300;color:var(--primary);line-height:1}
+    .step h3{font-family:var(--display);font-size:22px;font-weight:500;margin:14px 0 10px}
+    .step p{color:var(--muted);font-size:14.5px}
+    @media(max-width:860px){.step{border-right:0}}
 
-    .privacy { margin-top: 32px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 26px 28px; max-width: var(--w-prose); }
-    .privacy p { color: var(--muted); font-size: 14.5px; }
-    .privacy b { color: var(--fg); }
-    .facts { margin: 18px 0 0; display: flex; flex-direction: column; gap: 12px; }
-    .facts > div { display: grid; grid-template-columns: 168px 1fr; gap: 16px; align-items: baseline; }
-    .facts dt { font-family: var(--mono); font-size: 12.5px; font-weight: 600; color: var(--pink-soft); }
-    .facts dd { margin: 0; color: var(--muted); font-size: 14.5px; }
-    .privacy__more { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 13.5px; }
-    @media (max-width: 560px) { .facts > div { grid-template-columns: 1fr; gap: 2px; } }
+    /* ---- Pricing ---- */
+    .pricing{display:grid;grid-template-columns:1fr 1fr;margin-top:46px;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden;max-width:var(--w-prose)}
+    .plan{padding:38px 34px;display:flex;flex-direction:column;background:var(--card)}
+    .plan+.plan{border-left:1px solid var(--border);background:linear-gradient(180deg,rgba(201,162,39,.07),var(--card) 62%)}
+    .plan h3{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--primary);font-weight:500}
+    .price{font-family:var(--display);font-size:54px;font-weight:300;line-height:1;margin:18px 0 4px;letter-spacing:-.02em}
+    .price small{font-family:var(--sans);font-size:15px;color:var(--muted)}
+    .alt{color:var(--faint);font-size:13px}
+    .note{margin:16px 0 0;padding:10px 13px;font-size:12.5px;border-left:2px solid var(--success);
+      background:color-mix(in srgb,var(--success) 10%,transparent);color:var(--foreground);border-radius:0 var(--r-sm) var(--r-sm) 0}
+    .note b{color:var(--success)}
+    .plan ul{list-style:none;padding:0;margin:24px 0 26px;display:flex;flex-direction:column;gap:11px;color:var(--muted);font-size:14.5px}
+    .plan li{display:grid;grid-template-columns:16px 1fr;gap:10px;align-items:start}
+    .plan li::before{content:'';width:6px;height:6px;margin-top:8px;border-radius:50%;background:var(--primary);opacity:.75}
+    .plan .btn{justify-content:center;margin-top:auto}
+    .beta-note{color:var(--faint);font-family:var(--mono);font-size:11.5px;margin-top:16px;letter-spacing:.02em}
+    @media(max-width:740px){.pricing{grid-template-columns:1fr}.plan+.plan{border-left:0;border-top:1px solid var(--border)}}
 
-    footer { margin-top: 88px; border-top: 1px solid var(--border); padding: 26px 0 48px; display: flex; gap: 18px; flex-wrap: wrap; align-items: center; color: var(--faint); font-size: 13.5px; }
-    footer a { color: var(--muted); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
-    footer .spacer { flex: 1; }
+    /* ---- Privacy ---- */
+    .vow{margin-top:46px;border:1px solid var(--border);border-radius:var(--r-lg);padding:36px 34px;max-width:var(--w-prose);background:var(--card)}
+    .vow p{color:var(--muted);font-size:15.5px}
+    .vow b{color:var(--foreground)}
+    .facts{margin-top:24px}
+    .facts>div{display:grid;grid-template-columns:186px 1fr;gap:20px;padding:15px 0;border-top:1px solid var(--border);align-items:baseline}
+    .facts dt{font-family:var(--mono);font-size:11px;letter-spacing:.15em;text-transform:uppercase;color:var(--primary);font-weight:500}
+    .facts dd{margin:0;color:var(--muted);font-size:14.5px}
+    .vow__more{margin-top:22px;padding-top:18px;border-top:1px solid var(--border);font-size:13.5px;color:var(--muted)}
+    @media(max-width:620px){.facts>div{grid-template-columns:1fr;gap:3px}}
 
-    @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+    footer{margin-top:108px;border-top:1px solid var(--border);padding:30px 0 60px;display:flex;gap:22px;flex-wrap:wrap;align-items:center;color:var(--faint);font-size:13.5px}
+    footer a{color:var(--muted);text-decoration:none}
+    footer a:hover{color:var(--foreground)}
+    footer .sp{flex:1}
+
+    @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;transition-duration:.01ms!important}}
   </style>
 </head>
 <body>
   <div class="wrap">
     <nav>
-      <span class="mark" aria-hidden="true">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>
+      <span class="seal" aria-hidden="true">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h7v14H4zM13 5h7v14h-7"/><path d="M4 9.5h7M13 9.5h7"/></svg>
       </span>
-      <b>watch-later-librarian</b>
-      <span class="spacer"></span>
+      <b>The Watch Later Librarian</b>
+      <span class="sp"></span>
       <a class="nav-link" href="#how">How it works</a>
+      <a class="nav-link" href="#pricing">Pricing</a>
       <a class="btn btn-ghost" href="/app">Sign in</a>
     </nav>
 
     <header class="hero">
-      <h1>Your Watch Later<br>is a <em>graveyard.</em></h1>
-      <p>
-        Thousands of saved videos you'll never scroll through, and YouTube gives you zero
-        tools to deal with it. The librarian reads your whole backlog and sorts every video
-        into five honest rows, with a reason for each. You decide what lives.
+      <h1>Two thousand videos.<br><em>Not one of them read.</em></h1>
+      <p class="sub">
+        Your Watch Later became a graveyard because nothing was ever catalogued. The librarian
+        reads the whole backlog, files every video on a shelf, and writes the reason on the card.
+        You decide what stays.
       </p>
       <div class="cta">
-        <a class="btn btn-primary" href="/app">Sort my Watch Later</a>
+        <a class="btn btn-primary" href="/app">Catalogue my backlog</a>
         <a class="btn btn-ghost" href="https://chromewebstore.google.com/detail/watch-later-librarian-syn/iggeklmapgdaknfdblkhefnfaflbojeg" target="_blank" rel="noreferrer">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
           Add to Chrome
         </a>
       </div>
-      <div class="fine">your newest 1,000 videos free · 100 TL;DRs a month · your YouTube account is never touched</div>
+      <div class="fine">your newest 1,000 videos free · 100 summaries a month · your YouTube account is never touched</div>
 
-      <div class="mock" role="img" aria-label="Preview of the sorted board: five rows named learn, watch, music, fun, and outdated">
-        <div class="mock-row" style="--tint:#F472B6">
-          <span class="mock-icon" style="color:#F472B6;background:rgba(244,114,182,.14)">L</span>
-          <span class="mock-name">Worth learning from</span>
-          <span class="mock-count">312</span>
-          <div class="mock-cards"><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i></div>
+      <div class="cat" role="img" aria-label="The catalogue: five shelves named worth learning from, worth watching, music, just for fun, and outdated, holding 2,724 videos in total.">
+        <div class="cat__head"><span class="cat__dot"></span><span>Catalogue · 2,724 items · sorted this morning</span></div>
+        <div class="shelf" style="--tint:var(--cat-learn)">
+          <span class="shelf__tab"></span><span class="shelf__name">Worth learning from</span>
+          <span class="shelf__desc">Teaches a skill you said you cared about</span><span class="shelf__n">312</span>
         </div>
-        <div class="mock-row" style="--tint:#60A5FA">
-          <span class="mock-icon" style="color:#60A5FA;background:rgba(96,165,250,.14)">W</span>
-          <span class="mock-name">Worth watching</span>
-          <span class="mock-count">487</span>
-          <div class="mock-cards"><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i></div>
+        <div class="shelf" style="--tint:var(--cat-watch)">
+          <span class="shelf__tab"></span><span class="shelf__name">Worth watching</span>
+          <span class="shelf__desc">Good, and you will actually finish it</span><span class="shelf__n">487</span>
         </div>
-        <div class="mock-row" style="--tint:#34D399">
-          <span class="mock-icon" style="color:#34D399;background:rgba(52,211,153,.14)">M</span>
-          <span class="mock-name">Music</span>
-          <span class="mock-count">651</span>
-          <div class="mock-cards"><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i></div>
+        <div class="shelf" style="--tint:var(--cat-music)">
+          <span class="shelf__tab"></span><span class="shelf__name">Music</span>
+          <span class="shelf__desc">For the background, never for the queue</span><span class="shelf__n">651</span>
         </div>
-        <div class="mock-row" style="--tint:#A78BFA">
-          <span class="mock-icon" style="color:#A78BFA;background:rgba(167,139,250,.14)">F</span>
-          <span class="mock-name">Just for fun</span>
-          <span class="mock-count">903</span>
-          <div class="mock-cards"><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i></div>
+        <div class="shelf" style="--tint:var(--cat-fun)">
+          <span class="shelf__tab"></span><span class="shelf__name">Just for fun</span>
+          <span class="shelf__desc">No pretence that this is self improvement</span><span class="shelf__n">903</span>
         </div>
-        <div class="mock-row" style="--tint:#FBBF24">
-          <span class="mock-icon" style="color:#FBBF24;background:rgba(251,191,36,.14)">O</span>
-          <span class="mock-name">Outdated</span>
-          <span class="mock-count">371</span>
-          <div class="mock-cards"><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i><i class="mock-card"></i></div>
+        <div class="shelf" style="--tint:var(--cat-outdated)">
+          <span class="shelf__tab"></span><span class="shelf__name">Outdated</span>
+          <span class="shelf__desc">The moment it described has already passed</span><span class="shelf__n">371</span>
         </div>
       </div>
     </header>
 
     <section id="how">
-      <span class="kicker">How it works</span>
+      <span class="eyebrow">The method</span>
       <h2>Three steps, about five minutes</h2>
+      <p class="lede">Nothing here touches your YouTube account. The reading happens in your own browser; the filing happens here.</p>
       <div class="steps">
         <div class="step">
-          <span class="n">01</span>
-          <h3>Add the Chrome extension</h3>
-          <p>
-            YouTube blocks apps from reading Watch Later, so the reading happens in your
-            own browser. Install the extension, sign in, and your whole list syncs in one
-            click. Any browser without it can paste the list in by hand instead.
-          </p>
+          <div class="n">01</div>
+          <h3>Add the extension</h3>
+          <p>YouTube blocks apps from reading Watch Later, so the reading happens in your own browser. Install it, sign in, and the whole list syncs in one click. Any browser without it can paste the list in by hand.</p>
         </div>
         <div class="step">
-          <span class="n">02</span>
-          <h3>The librarian sorts everything</h3>
-          <p>
-            Every video gets read and filed: worth learning from, worth watching, music,
-            just for fun, or outdated, each with a one-line reason. Re-file anything and
-            it learns your taste for next time.
-          </p>
+          <div class="n">02</div>
+          <h3>The librarian reads</h3>
+          <p>Every video is filed on one of five shelves, each with a one line reason in plain language. Re-file anything and it learns your taste for next time.</p>
         </div>
         <div class="step">
-          <span class="n">03</span>
-          <h3>Clean up, and stay clean</h3>
-          <p>
-            Mark videos done or dismiss the dead weight, and you get a checklist of everything
-            that's safe to remove from the real playlist. From then on the extension files
-            new saves on its own, so your library never rots back into a graveyard.
-          </p>
+          <div class="n">03</div>
+          <h3>Clear the shelves</h3>
+          <p>Mark things done, dismiss the dead weight, and take the checklist back to YouTube. From then on new saves are filed automatically, so it never rots again.</p>
         </div>
       </div>
     </section>
 
     <section id="pricing">
-      <span class="kicker">Pricing</span>
+      <span class="eyebrow">Terms</span>
       <h2>Free to start, one plan after</h2>
       <div class="pricing">
         <div class="plan">
           <h3>Free</h3>
           <div class="price">$0</div>
+          <div class="alt">No card, no trial clock</div>
           <ul>
-            <li>Your newest 1,000 videos, all sorted</li>
-            <li>100 TL;DR summaries every month</li>
-            <li>All five rows, reasons included</li>
-            <li>Taste learning from your corrections</li>
+            <li>Your newest 1,000 videos, catalogued</li>
+            <li>100 summaries every month</li>
+            <li>All five shelves, reasons included</li>
+            <li>Learns from your corrections</li>
             <li>Cleanup checklist</li>
           </ul>
           <a class="btn btn-ghost" href="/app">Start free</a>
         </div>
-        <div class="plan pro">
+        <div class="plan">
           <h3>Pro</h3>
-          <div class="price">$4<span>/month</span></div>
-          <div class="price-alt">or $40/year, two months free</div>
-          <div class="price-note"><b>Free during the beta.</b> Subscriptions arrive later.</div>
+          <div class="price">$4<small> /month</small></div>
+          <div class="alt">or $40 a year, two months free</div>
+          <div class="note"><b>Free for everyone during the beta.</b> Subscriptions arrive later.</div>
           <ul>
             <li>Everything in Free</li>
             <li>Your entire backlog, no video limit</li>
-            <li>Unlimited TL;DR summaries</li>
+            <li>Unlimited summaries</li>
             <li>Learn mode: the librarian teaches you the video</li>
           </ul>
           <a class="btn btn-primary" href="/app">Go Pro</a>
         </div>
       </div>
-      <p class="beta-note">beta pricing · cancel anytime · fair use: 25,000 videos · each video is sorted once, forever</p>
+      <p class="beta-note">beta pricing · cancel anytime · fair use 25,000 videos · each video is sorted once, forever</p>
     </section>
 
     <section id="privacy">
-      <span class="kicker">Privacy</span>
+      <span class="eyebrow">The vow</span>
       <h2>Your account stays yours</h2>
-      <div class="privacy">
+      <div class="vow">
         <p>
           We never see your YouTube password, cookies, or account. The extension runs in
-          <b>your</b> browser, asks for access to youtube.com and nothing else, and only
-          reads your Watch Later playlist.
+          <b>your</b> browser, asks for access to youtube.com and nothing else, and only reads
+          your Watch Later playlist.
         </p>
         <dl class="facts">
           <div><dt>What we store</dt><dd>Your email, and the video titles you chose to import.</dd></div>
           <div><dt>What we never do</dt><dd>Modify your playlists, read your watch history, or sell data.</dd></div>
           <div><dt>Leaving</dt><dd>Delete everything with one button, any time.</dd></div>
         </dl>
-        <p class="privacy__more"><a href="/privacy.html">The full privacy page</a> is a two-minute read.</p>
+        <p class="vow__more"><a href="/privacy.html">The full privacy page</a> is a two-minute read.</p>
       </div>
     </section>
 
     <footer>
-      <span>Watch Later Librarian</span>
-      <span class="spacer"></span>
+      <span>The Watch Later Librarian</span>
+      <span class="sp"></span>
       <a href="/privacy.html">Privacy</a>
       <a href="/terms.html">Terms</a>
       <a href="mailto:doldorijw@gmail.com">Feedback</a>
