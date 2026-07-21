@@ -133,6 +133,11 @@ export function validateResults(data, expectedIds) {
     r.topics = topics.length ? topics : ["other"];
   }
   const got = new Set(results.map((r) => r.id));
+  // A duplicate id would collapse in the Set and could mask a missing one in
+  // the size check below, so reject it explicitly before comparing to the batch.
+  if (got.size !== results.length) {
+    throw new ClassificationError("duplicate ids in results");
+  }
   const want = new Set(expectedIds);
   if (got.size !== want.size || [...want].some((id) => !got.has(id))) {
     throw new ClassificationError("returned ids do not match the batch");
