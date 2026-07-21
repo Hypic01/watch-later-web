@@ -76,7 +76,7 @@ async function renderStatus() {
     const status = await send({ type: WLL_GET_STATUS });
     lastSyncNode.textContent = lastSyncText(status.lastSyncAt);
     if (!status.connected) {
-      statusNode.textContent = "Connect this extension from Watch Later Librarian.";
+      statusNode.textContent = "Connect this extension from Laterlist.";
       emailNode.textContent = "";
       setBusy(true);
       return;
@@ -124,7 +124,7 @@ async function start(mode) {
         ? "Full sync started in the background. You can close this popup."
         : "Sync started. You can close this popup.";
     } else if (reply?.error === "NOT_CONNECTED") {
-      statusNode.textContent = "Connect this extension from Watch Later Librarian.";
+      statusNode.textContent = "Connect this extension from Laterlist.";
     } else {
       statusNode.textContent = "A sync is already running.";
     }

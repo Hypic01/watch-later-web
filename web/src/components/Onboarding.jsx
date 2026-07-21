@@ -28,7 +28,7 @@ export default function Onboarding({ onDone }) {
     <div className="onboard">
       <h2>What do you use YouTube for?</h2>
       <p>
-        30 seconds, totally optional. The librarian uses this to judge what's worth
+        30 seconds, totally optional. Laterlist uses this to judge what's worth
         <em> your</em> time, and it keeps learning every time you re-file a video.
       </p>
       <div className="onboard__chips" role="group" aria-label="Pick your interests">

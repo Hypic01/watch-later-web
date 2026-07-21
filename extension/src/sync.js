@@ -268,7 +268,7 @@ export function createSyncController({
 
     const connection = await read(local, CONNECTION_KEY);
     if (!connection?.token || !connection?.apiUrl) {
-      await finishError({ code: "NOT_CONNECTED", error: "Connect the extension from Watch Later Librarian." });
+      await finishError({ code: "NOT_CONNECTED", error: "Connect the extension from Laterlist." });
       return;
     }
 

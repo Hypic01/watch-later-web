@@ -43,7 +43,7 @@ export default function UpgradeBand({ me, waitingCount, atCap, onToast, onJobSta
           <span className="upgrade__icon"><ZapIcon size={20} /></span>
           <div className="upgrade__text">
             <b>{waitingCount.toLocaleString()} videos are waiting to be sorted</b>
-            <p>The librarian files every one of them into your five rows.</p>
+            <p>Laterlist files every one of them into your five rows.</p>
           </div>
           <button className="btn btn--primary" disabled={busy} onClick={sortRemaining}>
             <ZapIcon size={15} /> {busy ? "Starting…" : "Sort now"}

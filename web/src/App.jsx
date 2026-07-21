@@ -21,8 +21,9 @@ import {
   WLL_SYNC_PROGRESS,
 } from "./extension.js";
 import {
-  LearnIcon, EyeIcon, MusicIcon, GamepadIcon, ArchiveIcon, BoardIcon,
+  LearnIcon, EyeIcon, MusicIcon, GamepadIcon, ArchiveIcon, BoardIcon, BrandMark,
   HistoryIcon, SettingsIcon, UploadIcon, GoogleIcon, SyncIcon,
+  SunIcon, MoonIcon,
 } from "./components/icons.jsx";
 
 const ROWS = [
@@ -47,14 +48,37 @@ const DURATIONS = [
 
 const ACTIVE_STATES = new Set(["queued", "running", "awaiting_batch"]);
 
+// Dark is the default; the toggle flips <html data-theme> and remembers the choice.
+function ThemeToggle() {
+  const [light, setLight] = useState(
+    () => typeof document !== "undefined" && document.documentElement.dataset.theme === "light"
+  );
+  const toggle = () => {
+    const next = !light;
+    setLight(next);
+    const root = document.documentElement;
+    if (next) root.dataset.theme = "light"; else delete root.dataset.theme;
+    try { localStorage.setItem("laterlist:theme", next ? "light" : "dark"); } catch { /* private mode */ }
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", next ? "#D9D9D9" : "#191919");
+  };
+  return (
+    <button className="btn btn--ghost" onClick={toggle}
+      aria-label={light ? "Switch to dark theme" : "Switch to light theme"}
+      title={light ? "Switch to dark" : "Switch to light"}>
+      {light ? <MoonIcon size={15} /> : <SunIcon size={15} />}
+    </button>
+  );
+}
+
 function AuthGate() {
   const [email, setEmail] = useState("");
   return (
     <div className="authgate">
       <div className="authgate__card">
-        <span className="brand__mark" style={{ width: 48, height: 48 }}><BoardIcon size={24} /></span>
-        <h1>Watch Later Librarian</h1>
-        <p>Your Watch Later is a graveyard. Sign in and let the librarian sort it. Your newest 1,000 videos are free.</p>
+        <span className="brand__mark" style={{ width: 48, height: 48 }}><BrandMark size={24} /></span>
+        <h1>Laterlist</h1>
+        <p>Your Watch Later is a graveyard. Sign in and Laterlist sorts it. Your newest 1,000 videos are free.</p>
         {isDevAuth ? (
           <form className="authgate__dev" onSubmit={(e) => { e.preventDefault(); if (email.includes("@")) { signInDev(email); location.reload(); } }}>
             <input type="email" placeholder="dev mode: any email" value={email}
@@ -514,8 +538,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <button className="brand" onClick={() => { setFocus(null); setView("board"); }} aria-label="Back to the board">
-          <span className="brand__mark"><BoardIcon size={18} /></span>
-          <h1>The Watch Later Librarian</h1>
+          <span className="brand__mark"><BrandMark size={18} /></span>
+          <h1>laterlist</h1>
         </button>
         <span className={`plan-badge plan-badge--${me.plan}`}>{me.plan}</span>
         <div className="topbar__spacer" />
@@ -539,6 +563,7 @@ export default function App() {
           aria-label="Cleanup checklist">
           {view === "cleanup" ? <><BoardIcon size={15} /> Board</> : <><HistoryIcon size={15} /> Cleanup</>}
         </button>
+        <ThemeToggle />
         <button className="btn btn--ghost" onClick={() => { setFocus(null); setView("settings"); }} aria-label="Settings" title="Settings">
           <SettingsIcon size={15} />
         </button>
@@ -585,7 +610,7 @@ export default function App() {
             <span className="empty-hero__icon"><UploadIcon size={30} /></span>
             <h2>Your library is empty</h2>
             <p>
-              Import your Watch Later and the librarian sorts every video into five rows:
+              Import your Watch Later and Laterlist sorts every video into five rows:
               what's worth learning from, worth watching, music, fun, and what's gone stale.
               Your newest {Number(me.videoCap).toLocaleString()} videos sort free.
             </p>

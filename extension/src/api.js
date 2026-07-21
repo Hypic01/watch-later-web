@@ -49,7 +49,7 @@ export function createExtensionApi({ fetch: fetchImpl = globalThis.fetch } = {})
         });
       } catch (error) {
         if (error instanceof ExtensionApiError) throw error;
-        throw new ExtensionApiError("NETWORK_ERROR", "Watch Later Librarian could not be reached.");
+        throw new ExtensionApiError("NETWORK_ERROR", "Laterlist could not be reached.");
       }
 
       const body = await response.json().catch(() => ({}));

@@ -2,7 +2,7 @@
 
 ## Single purpose
 
-Syncs the user's own YouTube Watch Later playlist into their Watch Later Librarian account so it can be organized and summarized.
+Syncs the user's own YouTube Watch Later playlist into their Laterlist account so it can be organized and summarized.
 
 ## Permission justifications
 
@@ -12,7 +12,7 @@ The scripting permission injects the collector into the user's own YouTube tab t
 
 ### storage
 
-The storage permission stores the user's own Watch Later Librarian API token and their chosen sync schedule locally in Chrome.
+The storage permission stores the user's own Laterlist API token and their chosen sync schedule locally in Chrome.
 
 ### alarms
 
@@ -28,13 +28,13 @@ The youtube.com host permission lets the extension read the user's own Watch Lat
 
 Website content: Yes. The extension collects video titles, channel names, durations, and captions from the user's own YouTube account.
 
-Authentication information: Yes. The extension stores the user's Watch Later Librarian access token locally in Chrome.
+Authentication information: Yes. The extension stores the user's Laterlist access token locally in Chrome.
 
 ### How the data is used
 
-The data is used only for the extension's single purpose, syncing the user's own YouTube Watch Later playlist into their Watch Later Librarian account so it can be organized and summarized.
+The data is used only for the extension's single purpose, syncing the user's own YouTube Watch Later playlist into their Laterlist account so it can be organized and summarized.
 
-The data is transmitted to the developer's service only for the user's own Watch Later Librarian account.
+The data is transmitted to the developer's service only for the user's own Laterlist account.
 
 The data is not sold. It is not shared with third parties. It is not used for creditworthiness or lending purposes.
 
@@ -54,4 +54,4 @@ Capture each screenshot at 1280 by 800 pixels.
 2. The import panel with the Chrome extension connected.
 3. The extension popup with the Auto-sync setting visible.
 4. A video detail view with its TL;DR visible.
-5. The Watch Later Librarian landing page.
+5. The Laterlist landing page.

@@ -22,7 +22,7 @@ describe("extension store build", () => {
   beforeAll(async () => {
     workspace = await mkdtemp(path.join(os.tmpdir(), "wll-extension-build-"));
     extensionDir = path.join(workspace, "extension");
-    zipPath = path.join(extensionDir, `watch-later-librarian-sync-${version}.zip`);
+    zipPath = path.join(extensionDir, `laterlist-sync-${version}.zip`);
 
     await Promise.all([
       cp(path.join(root, "extension"), extensionDir, { recursive: true }),

@@ -1,4 +1,4 @@
-# Watch Later Librarian (hosted)
+# Laterlist (hosted)
 
 The multi-user, freemium version of [watch-later-librarian](../watch-later-librarian):
 connect your own YouTube Watch Later → AI sorts your backlog into five rows →

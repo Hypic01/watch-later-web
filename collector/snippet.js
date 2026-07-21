@@ -15,7 +15,7 @@ import { createYtcfgRequestTemplate } from "./innertube.js";
 import { createContinuationPaginator } from "./pagination.js";
 
 (async () => {
-  const log = (msg) => console.log("%c[Watch Later Librarian] " + msg, "color:#2e6e4e;font-weight:bold");
+  const log = (msg) => console.log("%c[Laterlist] " + msg, "color:#6695F7;font-weight:bold");
 
   if (!isWatchLaterPage(location.href)) {
     alert(
@@ -132,10 +132,10 @@ import { createContinuationPaginator } from "./pagination.js";
       : "";
   log("Done. " + videos.length + " videos collected" + unavailableText + ".");
   if (copied) {
-    log("The JSON is on your clipboard. Go back to Watch Later Librarian and paste it.");
-    alert("Done! " + videos.length + " videos collected and copied to your clipboard.\n\nGo back to Watch Later Librarian and paste.");
+    log("The JSON is on your clipboard. Go back to Laterlist and paste it.");
+    alert("Done! " + videos.length + " videos collected and copied to your clipboard.\n\nGo back to Laterlist and paste.");
   } else {
     log("Clipboard was unavailable, so it downloaded as watch-later.json. Upload that file instead.");
-    alert("Done! " + videos.length + " videos collected.\n\nClipboard was unavailable, so a file named watch-later.json was downloaded. Upload it in Watch Later Librarian.");
+    alert("Done! " + videos.length + " videos collected.\n\nClipboard was unavailable, so a file named watch-later.json was downloaded. Upload it in Laterlist.");
   }
 })();

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Watch Later Librarian Sync",
-  "version": "1.0.1",
-  "description": "Sorts your own YouTube Watch Later into a tidy library with AI. One click sync; new saves are filed automatically.",
+  "name": "Laterlist Sync",
+  "version": "1.1.0",
+  "description": "Sorts your own YouTube Watch Later into tidy shelves with AI. One click sync; new saves are filed automatically.",
   "permissions": ["scripting", "storage", "alarms"],
   "host_permissions": ["https://www.youtube.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },

@@ -87,6 +87,27 @@ export const BoardIcon = p => (
   </Icon>
 )
 
+// Laterlist brand mark: a list with a check — "sort your Watch Later, done."
+export const BrandMark = p => (
+  <Icon {...p}>
+    <path d="M4 6h10M4 12h10M4 18h6" />
+    <path d="M15 15l3 3 4-5" />
+  </Icon>
+)
+
+export const SunIcon = p => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </Icon>
+)
+
+export const MoonIcon = p => (
+  <Icon {...p}>
+    <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+  </Icon>
+)
+
 export const SparklesIcon = p => (
   <Icon {...p}>
     <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />

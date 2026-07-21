@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import * as api from "../api.js";
 import { signOut } from "../auth.js";
-import { ArrowLeftIcon, LogOutIcon } from "./icons.jsx";
+import { ArrowLeftIcon, LogOutIcon, SunIcon, MoonIcon } from "./icons.jsx";
 import ExtensionConnection from "./ExtensionConnection.jsx";
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
@@ -21,6 +21,18 @@ export default function Settings({
   const [tokensLoading, setTokensLoading] = useState(true);
   const [tokenBusy, setTokenBusy] = useState(null);
   const [generatedToken, setGeneratedToken] = useState(null);
+  const [light, setLight] = useState(
+    () => typeof document !== "undefined" && document.documentElement.dataset.theme === "light"
+  );
+
+  const applyTheme = (nextLight) => {
+    setLight(nextLight);
+    const root = document.documentElement;
+    if (nextLight) root.dataset.theme = "light"; else delete root.dataset.theme;
+    try { localStorage.setItem("laterlist:theme", nextLight ? "light" : "dark"); } catch { /* private mode */ }
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", nextLight ? "#D9D9D9" : "#191919");
+  };
 
   useEffect(() => {
     let active = true;
@@ -125,6 +137,21 @@ export default function Settings({
           <button className="btn btn--ghost" onClick={() => signOut()}>
             <LogOutIcon size={14} /> Sign out
           </button>
+        </div>
+      </div>
+
+      <div className="settings__block">
+        <h3>Appearance</h3>
+        <div className="settings__row">
+          <p>Theme. Dark is the default; your choice is remembered on this device.</p>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            <button className={light ? "btn btn--ghost" : "btn btn--primary"} onClick={() => applyTheme(false)} aria-pressed={!light}>
+              <MoonIcon size={14} /> Dark
+            </button>
+            <button className={light ? "btn btn--primary" : "btn btn--ghost"} onClick={() => applyTheme(true)} aria-pressed={light}>
+              <SunIcon size={14} /> Light
+            </button>
+          </div>
         </div>
       </div>
 

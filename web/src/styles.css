@@ -1,58 +1,68 @@
-/* ---------- Design tokens — "The Archive" ------------------------------------
-   Identity: a private archive, not another AI dashboard. Warm near-black instead
-   of blue slate, one brass accent instead of a pink/blue gradient, and type split
-   into three jobs (serif = voice, sans = dense UI, mono = data).
+/* ---------- Design tokens — Laterlist ----------------------------------------
+   Identity: a fast, modern tool that clears your YouTube Watch Later — not a
+   library. MONOCHROME base (Woodsmoke #191919 / Gainsboro #D9D9D9, swapped by
+   the theme toggle) with colour ONLY on category shelves, and type split into
+   three jobs (Fjalla One = display, Inter = dense UI, JetBrains Mono = data).
+   No serif, no film grain.
 
    Structured on shadcn's semantic token model (background/foreground, card,
    popover, primary, secondary, muted, accent, destructive, border, input, ring)
    so surfaces and their text always travel as a pair. Legacy --color-* names are
    kept as aliases below so every existing rule keeps resolving.
 
-   Every value below is contrast-checked against all three surfaces; the lowest
-   pair in the system is --faint on --popover at 4.85:1, over the 4.5:1 floor. */
+   Dark is the default (:root). Light ships as the [data-theme="light"] override
+   below, stamped onto <html> by the topbar toggle + the FOUC script in the HTML
+   heads. The brand is monochrome — --accent resolves to the foreground, so it
+   flips automatically with the theme. The only colour is the category tints. */
 :root {
-  /* Surfaces, each with the foreground that is legible on it */
-  --background: #12110F;
-  --foreground: #F4EFE6;
-  --card: #1A1815;
-  --card-foreground: #F4EFE6;
-  --popover: #221F1B;
-  --popover-foreground: #F4EFE6;
+  color-scheme: dark;
 
-  /* Brand: one accent, used for the primary action and nothing decorative */
-  --primary: #C9A227;
-  --primary-hover: #DFBE5C;
-  --primary-foreground: #17130A;
+  /* Surfaces — Woodsmoke base (#191919), Gainsboro foreground (#D9D9D9) */
+  --background: #191919;
+  --foreground: #D9D9D9;
+  --card: #212121;
+  --card-foreground: #D9D9D9;
+  --popover: #292929;
+  --popover-foreground: #D9D9D9;
 
-  --secondary: #262320;
-  --secondary-foreground: #F4EFE6;
-  --muted: #A89C8A;
-  --faint: #968A79;
+  /* Brand is MONOCHROME: the accent IS the foreground, so it flips with the theme. */
+  --accent: var(--foreground);
+  --accent-hover: color-mix(in srgb, var(--foreground) 82%, var(--background));
+  --accent-foreground: var(--background);
 
-  --destructive: #E8705F;
-  --success: #8FB08A;
+  --primary: var(--accent);
+  --primary-hover: var(--accent-hover);
+  --primary-foreground: var(--accent-foreground);
+
+  --secondary: #2E2E2E;
+  --secondary-foreground: #D9D9D9;
+  --muted: #9A9A9A;
+  --faint: #6E6E6E;
+
+  --destructive: #EC614B;
+  --success: var(--foreground);
   --warning: #D9A441;
 
-  --border: rgba(244, 239, 230, .10);
-  --border-strong: rgba(244, 239, 230, .20);
-  --ring: #C9A227;
+  --border: rgba(217, 217, 217, .10);
+  --border-strong: rgba(217, 217, 217, .18);
+  --ring: var(--accent);
 
-  /* Shelf tints: muted archival colours, like the tabs on index cards. "Outdated"
-     is deliberately the drabbest — the discard pile should not compete for the eye. */
-  --cat-learn: #D4A574;
-  --cat-watch: #7FA5C4;
-  --cat-music: #8FB08A;
-  --cat-entertainment: #C08BA8;
-  --cat-outdated: #9A9083;
+  /* Shelf tints — the ONLY colour in the system (Notion palette, exact hexes,
+     shared across both themes). "Outdated" = Coral, reads as expired/discard. */
+  --cat-learn: #6695F7;         /* Cornflowerblue */
+  --cat-watch: #70B665;         /* Fern */
+  --cat-music: #FFBAC3;         /* Lightpink */
+  --cat-entertainment: #FFDE66; /* Dandelion */
+  --cat-outdated: #EC614B;      /* Coral */
 
-  --font-display: 'Fraunces', Georgia, serif;
+  --font-display: 'Fjalla One', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
 
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
   --space-5: 24px; --space-6: 32px; --space-7: 48px;
 
-  /* Tighter than before: an archive reads as crisp, not soft/bubbly */
+  /* Tight, crisp radii for a tool (not soft/bubbly) */
   --radius-sm: 4px; --radius-md: 7px; --radius-lg: 11px; --radius-pill: 999px;
 
   --shadow-card: 0 1px 2px rgba(0, 0, 0, .5);
@@ -85,9 +95,44 @@
   --font-heading: var(--font-display);
 }
 
+/* ---------- Light theme ------------------------------------------------------
+   Dark is the default (:root). Light is an override stamped onto
+   <html data-theme="light"> by the topbar toggle + the head FOUC script. Only
+   surfaces, text, borders, shadows and the accent's calibrated light value
+   change; the alias layer and everything else inherit automatically. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Gainsboro canvas, Woodsmoke ink. --accent + --success inherit --foreground,
+     so they flip to Woodsmoke automatically. Category tints stay the exact hexes
+     (shared across themes). Raised surfaces go lighter than the canvas to lift. */
+  --background: #D9D9D9;
+  --foreground: #191919;
+  --card: #EDEDED;
+  --card-foreground: #191919;
+  --popover: #F4F4F4;
+  --popover-foreground: #191919;
+
+  --secondary: #E4E4E4;
+  --secondary-foreground: #191919;
+  --muted: #5A5A5A;
+  --faint: #7C7C7C;
+
+  --destructive: #D8452C;
+  --warning: #9A6B12;
+
+  --border: rgba(25, 25, 25, .14);
+  --border-strong: rgba(25, 25, 25, .24);
+
+  --shadow-card: 0 1px 2px rgba(25, 25, 25, .08);
+  --shadow-raised: 0 12px 30px rgba(25, 25, 25, .16);
+
+  --color-warning-bg: rgba(154, 107, 18, .12);
+  --color-warning-border: rgba(154, 107, 18, .34);
+}
+
 /* ---------- Base ---------- */
 * { box-sizing: border-box; margin: 0; }
-html { color-scheme: dark; }
 body {
   background: var(--color-background);
   color: var(--color-foreground);
@@ -96,15 +141,7 @@ body {
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
-body::before {
-  content: ''; position: fixed; inset: 0; z-index: -2; pointer-events: none;
-  /* One warm light source instead of two competing coloured blooms. */
-  background: radial-gradient(1100px 560px at 50% -14%, rgba(201, 162, 39, .10), transparent 64%);
-}
-body::after {
-  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .04;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
-}
+/* Flat monochrome canvas — no coloured bloom, no film grain. */
 button { font-family: inherit; cursor: pointer; }
 :focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; border-radius: var(--radius-sm); }
 
@@ -132,10 +169,10 @@ button { font-family: inherit; cursor: pointer; }
   transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease);
 }
 .brand:hover .brand__mark { background: color-mix(in srgb, var(--primary) 16%, transparent); border-color: var(--primary); }
-/* Serif wordmark: the product's voice lives in the type, not in a blinking cursor. */
+/* Space Grotesk wordmark: lowercase, tight, tool-like. */
 .brand h1 {
-  font-family: var(--font-display); font-size: 19px; font-weight: 500;
-  letter-spacing: .005em; white-space: nowrap;
+  font-family: var(--font-display); font-size: 19px; font-weight: 600;
+  letter-spacing: -.02em; white-space: nowrap;
 }
 .topbar__spacer { flex: 1; }
 @media (max-width: 760px) { .brand h1 { display: none; } }
@@ -161,7 +198,7 @@ button { font-family: inherit; cursor: pointer; }
 .btn:active { transform: scale(.97); }
 .btn:disabled { opacity: .45; cursor: default; transform: none; filter: saturate(.25); }
 .btn--primary { background: var(--primary); color: var(--primary-foreground); font-weight: 600; }
-.btn--primary:hover { background: var(--primary-hover); box-shadow: 0 6px 20px rgba(201, 162, 39, .26); }
+.btn--primary:hover { background: var(--primary-hover); box-shadow: var(--shadow-card); }
 .btn--ghost { background: var(--secondary); color: var(--foreground); border-color: var(--border); }
 .btn--ghost:hover { background: var(--popover); border-color: var(--border-strong); }
 .btn--danger { background: none; color: var(--color-destructive); border-color: color-mix(in srgb, var(--color-destructive) 40%, transparent); }
@@ -188,7 +225,7 @@ button { font-family: inherit; cursor: pointer; }
 .progress-track--band { height: 10px; width: 100%; background: var(--color-surface-raised); }
 .progress-fill {
   height: 100%; border-radius: var(--radius-pill);
-  background: linear-gradient(90deg, var(--color-accent), var(--color-primary));
+  background: var(--accent);
   transition: width .4s var(--ease);
 }
 .progress-fill--indeterminate {
@@ -284,7 +321,6 @@ button { font-family: inherit; cursor: pointer; }
 .row__scroll::-webkit-scrollbar-track { background: transparent; }
 .row__empty {
   color: var(--faint); font-size: 14.5px; padding: var(--space-5) var(--space-4);
-  font-family: var(--font-display); font-style: italic;
   border: 1px dashed var(--border); border-radius: var(--radius-lg);
 }
 .row__more {
@@ -423,8 +459,7 @@ button { font-family: inherit; cursor: pointer; }
 .card__channel { color: var(--color-muted); font-size: 12.5px; }
 .card__reasoning {
   display: flex; gap: 7px; align-items: flex-start;
-  color: var(--row-tint, var(--primary-hover)); font-size: 13px; line-height: 1.45;
-  font-family: var(--font-display); font-style: italic;
+  color: var(--muted); font-size: 13px; line-height: 1.45;
 }
 .card__reasoning svg { flex: 0 0 auto; margin-top: 2px; opacity: .8; }
 .card__reasoning span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -735,7 +770,7 @@ button { font-family: inherit; cursor: pointer; }
 }
 .detail__hero::after {
   content: ''; position: absolute; inset: auto 0 0; height: 24%; pointer-events: none;
-  background: linear-gradient(transparent, rgba(15, 23, 42, .42));
+  background: linear-gradient(transparent, rgba(0, 0, 0, .42));
 }
 .detail__thumb { width: 100%; aspect-ratio: 16/9; object-fit: cover; display: block; }
 .detail__head { margin-top: var(--space-5); display: flex; flex-direction: column; gap: var(--space-3); }
@@ -817,7 +852,7 @@ button { font-family: inherit; cursor: pointer; }
 /* ---------- Upgrade modal ---------- */
 .modal {
   position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
-  padding: var(--space-5); background: rgba(2, 6, 23, .78); backdrop-filter: blur(7px);
+  padding: var(--space-5); background: rgba(9, 11, 16, .74); backdrop-filter: blur(7px);
   animation: rise .2s var(--ease) backwards;
 }
 .modal__card {
@@ -826,14 +861,14 @@ button { font-family: inherit; cursor: pointer; }
   padding: var(--space-6); border: 1px solid color-mix(in srgb, var(--color-primary) 38%, var(--color-border));
   border-radius: calc(var(--radius-lg) + 4px);
   background:
-    radial-gradient(360px 200px at 50% -20%, rgba(236, 72, 153, .2), transparent 70%),
+    radial-gradient(360px 200px at 50% -20%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
     var(--color-surface);
   box-shadow: 0 28px 80px rgba(0, 0, 0, .62);
 }
 .modal__mark {
   width: 54px; height: 54px; display: grid; place-items: center; border-radius: var(--radius-lg);
   color: var(--primary-foreground); background: var(--primary);
-  box-shadow: 0 10px 34px rgba(236, 72, 153, .28);
+  box-shadow: 0 10px 34px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 .modal__card h2 { font-family: var(--font-display); font-size: 26px; font-weight: 500; letter-spacing: .004em; }
 .modal__card p { max-width: 34ch; color: var(--color-muted); }

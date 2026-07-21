@@ -3,18 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Privacy — Watch Later Librarian</title>
-  <meta name="theme-color" content="#0F172A" />
+  <title>Privacy — Laterlist</title>
+  <meta name="theme-color" content="#191919" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fjalla+One&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
   <style>
     :root { color-scheme: dark; }
-    body { background: #0F172A; color: #F8FAFC; font-family: 'Fira Sans', -apple-system, sans-serif; line-height: 1.7; margin: 0; padding: 48px 24px 96px; }
+    body { background: #191919; color: #D9D9D9; font-family: 'Inter', -apple-system, sans-serif; line-height: 1.7; margin: 0; padding: 48px 24px 96px; }
     main { max-width: 680px; margin: 0 auto; }
-    h1 { font-family: ui-monospace, monospace; letter-spacing: -.02em; }
+    h1 { font-family: 'Fjalla One', -apple-system, sans-serif; letter-spacing: -.01em; font-weight: 400; }
     h2 { font-size: 17px; margin-top: 36px; }
-    p, li { color: #94A3B8; font-size: 15px; }
-    b { color: #F8FAFC; }
-    a { color: #93C5FD; }
-    .updated { font-size: 13px; color: #64748B; font-family: ui-monospace, monospace; }
+    p, li { color: #9A9A9A; font-size: 15px; }
+    b { color: #D9D9D9; }
+    a { color: #D9D9D9; text-underline-offset: 2px; }
+    .updated { font-size: 13px; color: #6E6E6E; font-family: ui-monospace, monospace; }
   </style>
 </head>
 <body>
@@ -39,7 +42,7 @@
   </ul>
 
   <h2>The Chrome extension</h2>
-  <p>The extension reads your YouTube Watch Later list only when you sync, from your own signed in browser. It sends video titles, channels, durations, and caption text to your own Watch Later Librarian account and nowhere else. Your access token is stored locally in your browser. The extension never reads other sites, never collects browsing history, and never sells or shares data.</p>
+  <p>The extension reads your YouTube Watch Later list only when you sync, from your own signed in browser. It sends video titles, channels, durations, and caption text to your own Laterlist account and nowhere else. Your access token is stored locally in your browser. The extension never reads other sites, never collects browsing history, and never sells or shares data.</p>
 
   <h2>How classification works</h2>
   <p>Video titles and metadata are sent to Anthropic's Claude API to be sorted into categories. Anthropic does not train on this data. No other third parties see your library.</p>

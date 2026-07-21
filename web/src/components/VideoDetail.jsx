@@ -354,7 +354,7 @@ export default function VideoDetail({
               disabled={upgradeBusy} aria-label="Close"><XIcon size={17} /></button>
             <span className="modal__mark"><LearnIcon size={22} /></span>
             <h2 id="learn-upgrade-title">Learn is a Pro superpower.</h2>
-            <p>The librarian teaches you the video so you never have to watch it.</p>
+            <p>Laterlist teaches you the video so you never have to watch it.</p>
             <button className="btn btn--primary" disabled={upgradeBusy} onClick={beginUpgrade}>
               <ZapIcon size={15} /> {upgradeBusy ? "Opening…" : "Upgrade to Pro"}
             </button>

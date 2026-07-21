@@ -317,7 +317,7 @@ export function createApp({
     try {
       generated = await mentor.summarize(video, { tasteProfile: user.taste_profile || {} });
     } catch {
-      return res.status(502).json({ error: "The librarian could not summarize this video. Please try again." });
+      return res.status(502).json({ error: "Couldn't summarize this video. Please try again." });
     }
     const usage = {
       input: Math.max(0, Math.floor(Number(generated.usage?.input) || 0)),
@@ -335,7 +335,7 @@ export function createApp({
     if (!saved) {
       const winner = await db.getSummary(req.user.id, req.params.id);
       if (winner) return res.json({ summary: winner.summary, cached: true, ...meter() });
-      return res.status(502).json({ error: "The librarian could not save this summary. Please try again." });
+      return res.status(502).json({ error: "Couldn't save this summary. Please try again." });
     }
 
     await db.addUsage({

@@ -8,7 +8,7 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, "dist");
 const manifest = JSON.parse(await readFile(path.join(here, "manifest.json"), "utf8"));
-const zipPath = path.join(here, `watch-later-librarian-sync-${manifest.version}.zip`);
+const zipPath = path.join(here, `laterlist-sync-${manifest.version}.zip`);
 const iconSizes = [16, 48, 128];
 
 // externally_connectable ships to real users. localhost must NEVER be in the
