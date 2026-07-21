@@ -101,14 +101,28 @@
       background:var(--card);overflow:hidden;box-shadow:var(--shadow-raised)}
     .frame__bar{display:flex;gap:7px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--border);background:var(--popover)}
     .frame__bar span{width:11px;height:11px;border-radius:50%;background:var(--border-strong)}
-    .frame__stage{aspect-ratio:16/9;display:grid;place-items:center;padding:clamp(20px,4vw,48px)}
-    .folders{display:grid;grid-template-columns:repeat(4,1fr);gap:clamp(12px,1.6vw,20px);width:100%;max-width:820px}
-    .folder{border:1px solid var(--border);border-radius:12px;padding:18px 16px;background:var(--background);
-      display:flex;flex-direction:column;gap:12px;text-align:left}
-    .folder__tab{height:8px;width:44px;border-radius:3px;background:var(--tint)}
-    .folder__name{font-family:var(--display);font-size:clamp(14px,1.5vw,17px);letter-spacing:-.005em;line-height:1.1}
+    .frame__stage{position:relative;aspect-ratio:16/9;overflow:hidden}
+    /* Layer A: the grayscale pile (theme-aware via tokens) */
+    .pile{position:absolute;left:0;right:0;top:0;padding:22px clamp(20px,4vw,44px);opacity:0;
+      display:flex;flex-direction:column;gap:14px;filter:blur(var(--b,0px));will-change:transform,filter}
+    .vrow{display:flex;gap:14px;align-items:center}
+    .vrow__thumb{flex:0 0 auto;width:clamp(96px,13vw,140px);aspect-ratio:16/9;border-radius:7px;background:var(--secondary)}
+    .vrow__lines{flex:1;display:flex;flex-direction:column;gap:8px}
+    .vrow__t{height:10px;border-radius:3px;background:color-mix(in srgb,var(--foreground) 16%,transparent)}
+    .vrow__c{height:8px;border-radius:3px;background:color-mix(in srgb,var(--foreground) 9%,transparent)}
+    /* Layer B: the folders */
+    .folders-layer{position:absolute;inset:0;display:grid;place-items:center;padding:clamp(20px,4vw,44px)}
+    .folders{display:grid;grid-template-columns:repeat(2,1fr);gap:clamp(20px,3.2vw,36px);width:100%;max-width:500px}
+    .folder{display:flex;flex-direction:column;gap:12px;text-align:left;will-change:transform,opacity}
+    .folder__icon{position:relative;aspect-ratio:11/9;margin-top:12px}
+    .folder__back{position:absolute;inset:0;border-radius:4px 12px 12px 12px;background:color-mix(in srgb,var(--tint) 84%,#000)}
+    .folder__back::before{content:'';position:absolute;top:-11px;left:7%;width:44%;height:15px;border-radius:7px 7px 0 0;background:color-mix(in srgb,var(--tint) 84%,#000)}
+    .folder__paper{position:absolute;left:11%;right:15%;top:8%;height:52%;border-radius:3px;background:#ECECEC;box-shadow:8px -6px 0 -2px #CDCDCD}
+    .folder__front{position:absolute;left:0;right:0;bottom:0;height:66%;border-radius:3px 12px 12px 12px;background:var(--tint)}
+    .folder__meta{display:flex;flex-direction:column;gap:2px}
+    .folder__name{font-family:var(--display);font-size:clamp(14px,1.6vw,18px);letter-spacing:-.005em;line-height:1.1}
     .folder__n{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
-    @media(max-width:720px){.folders{grid-template-columns:repeat(2,1fr);max-width:420px}.frame__stage{aspect-ratio:1/1}}
+    @media(max-width:720px){.frame__stage{aspect-ratio:4/5}.folders{max-width:380px}}
 
     /* Quiet scroll-entry (only when JS is on; content is never hidden without JS) */
     .has-js .reveal{opacity:0;transform:translateY(14px);transition:opacity .6s cubic-bezier(.16,1,.3,1),transform .6s cubic-bezier(.16,1,.3,1)}
@@ -212,11 +226,26 @@
       <div class="frame reveal" role="img" aria-label="Preview: a Watch Later playlist sorted into four folders — worth learning, worth watching, music, and just for fun.">
         <div class="frame__bar" aria-hidden="true"><span></span><span></span><span></span></div>
         <div class="frame__stage">
-          <div class="folders">
-            <div class="folder" style="--tint:var(--cat-learn)"><span class="folder__tab"></span><span class="folder__name">Worth learning</span><span class="folder__n">312 videos</span></div>
-            <div class="folder" style="--tint:var(--cat-watch)"><span class="folder__tab"></span><span class="folder__name">Worth watching</span><span class="folder__n">487 videos</span></div>
-            <div class="folder" style="--tint:var(--cat-music)"><span class="folder__tab"></span><span class="folder__name">Music</span><span class="folder__n">651 videos</span></div>
-            <div class="folder" style="--tint:var(--cat-fun)"><span class="folder__tab"></span><span class="folder__name">Just for fun</span><span class="folder__n">903 videos</span></div>
+          <div class="pile" id="heroPile"></div>
+          <div class="folders-layer">
+            <div class="folders">
+              <div class="folder" style="--tint:var(--cat-learn)">
+                <div class="folder__icon"><span class="folder__back"></span><span class="folder__paper"></span><span class="folder__front"></span></div>
+                <div class="folder__meta"><span class="folder__name">Worth learning</span><span class="folder__n">312 videos</span></div>
+              </div>
+              <div class="folder" style="--tint:var(--cat-watch)">
+                <div class="folder__icon"><span class="folder__back"></span><span class="folder__paper"></span><span class="folder__front"></span></div>
+                <div class="folder__meta"><span class="folder__name">Worth watching</span><span class="folder__n">487 videos</span></div>
+              </div>
+              <div class="folder" style="--tint:var(--cat-music)">
+                <div class="folder__icon"><span class="folder__back"></span><span class="folder__paper"></span><span class="folder__front"></span></div>
+                <div class="folder__meta"><span class="folder__name">Music</span><span class="folder__n">651 videos</span></div>
+              </div>
+              <div class="folder" style="--tint:var(--cat-fun)">
+                <div class="folder__icon"><span class="folder__back"></span><span class="folder__paper"></span><span class="folder__front"></span></div>
+                <div class="folder__meta"><span class="folder__name">Just for fun</span><span class="folder__n">903 videos</span></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -283,6 +312,7 @@
       <a href="/app">Sign in</a>
     </footer>
   </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
   <script>
     (function(){
       var KEY='laterlist:theme';
@@ -309,6 +339,43 @@
         reveals.forEach(function(el){ io.observe(el); });
       } else {
         reveals.forEach(function(el){ el.classList.add('in'); });
+      }
+
+      // Hero animation: the pile scrolls + collapses, then the folders deal out.
+      // Falls back to the static folders when GSAP is absent or reduced-motion is on
+      // (the pile defaults to opacity:0 in CSS, so the frame always shows the folders).
+      var frame=document.querySelector('.frame');
+      var pileEl=document.getElementById('heroPile');
+      if(frame && pileEl){
+        var widths=[82,68,90,74,60,86,72,78,64,88,70,80,76,66,84,73,62,89,71,79,67,83,75,69];
+        widths.forEach(function(w){
+          var row=document.createElement('div'); row.className='vrow';
+          row.innerHTML='<div class="vrow__thumb"></div><div class="vrow__lines"><div class="vrow__t" style="width:'+w+'%"></div><div class="vrow__c" style="width:'+Math.round(w*0.5)+'%"></div></div>';
+          pileEl.appendChild(row);
+        });
+        var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if(!reduce && window.gsap){
+          var stage=frame.querySelector('.frame__stage');
+          var flds=gsap.utils.toArray('.frame .folder');
+          gsap.set(pileEl,{y:0,opacity:1,scale:1,'--b':'0px',transformOrigin:'50% 40%'});
+          gsap.set(flds,{opacity:0,y:16,scale:0.9,transformOrigin:'50% 60%'});
+          var played=false;
+          var aio=new IntersectionObserver(function(es){
+            es.forEach(function(e){
+              if(e.isIntersecting && !played){
+                played=true; aio.unobserve(frame);
+                var dist=pileEl.scrollHeight - stage.clientHeight + 120;
+                gsap.timeline({defaults:{ease:'power2.out'}})
+                  .to(pileEl,{y:-dist,duration:1.0,ease:'power2.in'},0)
+                  .to(pileEl,{'--b':'5px',duration:0.5,ease:'power1.in'},0.5)
+                  .to(pileEl,{scale:0.92,opacity:0,duration:0.35,ease:'power2.inOut'},1.0)
+                  .to(pileEl,{'--b':'0px',duration:0.35},1.0)
+                  .to(flds,{opacity:1,y:0,scale:1,duration:0.5,ease:'back.out(1.6)',stagger:0.16},1.3);
+              }
+            });
+          },{threshold:0.35});
+          aio.observe(frame);
+        }
       }
     })();
   </script>
