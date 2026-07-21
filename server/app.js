@@ -123,9 +123,10 @@ export function createApp({
   // ---- me ----
   app.get("/api/me", auth.required, async (req, res) => {
     const u = await db.getUser(req.user.id);
-    const [counts, summariesUsed] = await Promise.all([
+    const [counts, summariesUsed, lastImportAt] = await Promise.all([
       db.counts(req.user.id),
       db.countSummariesThisMonth(req.user.id),
+      db.lastImportAt(req.user.id),
     ]);
     const pro = req.user.isAdmin || u.plan === "pro" || config.betaProForAll;
     res.json({
@@ -141,6 +142,7 @@ export function createApp({
       proEndsAt: u.billing_ends_at ?? null,
       proInterval: u.billing_interval ?? null,
       counts,
+      lastImportAt,
       hasTaste: u.taste_profile && Object.keys(u.taste_profile).length > 0,
     });
   });

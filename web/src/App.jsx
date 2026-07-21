@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "./api.js";
-import { SORTS, parseTopics } from "./lib.js";
+import { SORTS, parseTopics, timeAgo, absoluteTime } from "./lib.js";
 import { hasSession, signInWithGoogle, signInDev, isDevAuth, onAuthChange } from "./auth.js";
 import Row from "./components/Row.jsx";
 import CategoryView from "./components/CategoryView.jsx";
@@ -555,6 +555,11 @@ export default function App() {
         <button className="btn btn--primary" onClick={() => { setFocus(null); setView("import"); }}>
           <UploadIcon size={15} /> Import
         </button>
+        {me.lastImportAt && (
+          <span className="wl-stat" title={absoluteTime(me.lastImportAt)}>
+            Imported {timeAgo(me.lastImportAt)}
+          </span>
+        )}
         <ThemeToggle />
         <button className="btn btn--ghost" onClick={() => { setFocus(null); setView("settings"); }} aria-label="Settings" title="Settings">
           <SettingsIcon size={15} />

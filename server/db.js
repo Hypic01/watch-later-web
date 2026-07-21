@@ -408,6 +408,14 @@ export function createDb(q) {
       return rows[0].n;
     },
 
+    async lastImportAt(userId) {
+      const { rows } = await q.query(
+        "SELECT created_at FROM imports WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
+        [userId]
+      );
+      return rows[0]?.created_at ?? null;
+    },
+
     // ---- jobs ----
     async createJob(userId, { mode, tier, total }) {
       const { rows } = await q.query(

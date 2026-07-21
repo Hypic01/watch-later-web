@@ -196,6 +196,23 @@ describe("me & admin", () => {
     expect(fresh.body.tasteProfile).toEqual({});
   });
 
+  it("/api/me surfaces the last import time (null until the first import)", async () => {
+    const before = await asUser(request(app).get("/api/me")).expect(200);
+    expect(before.body.lastImportAt).toBeNull();
+
+    const t0 = Date.now();
+    await asUser(request(app).post("/api/imports")).send(payload(3)).expect(200);
+    // Leave no active job behind, matching the other import tests in this file.
+    const job = await db.getActiveJob(before.body.id);
+    if (job) await db.finishJob(job.id, "completed");
+
+    const after = await asUser(request(app).get("/api/me")).expect(200);
+    const stamp = Date.parse(after.body.lastImportAt);
+    expect(Number.isNaN(stamp)).toBe(false);
+    expect(stamp).toBeGreaterThanOrEqual(t0 - 60_000);
+    expect(stamp).toBeLessThanOrEqual(Date.now() + 60_000);
+  });
+
   it("admins read stats and flip the kill switch; plebs cannot", async () => {
     await asUser(request(app).get("/api/admin/stats"), "user@test.dev").expect(403);
     const stats = await asUser(request(app).get("/api/admin/stats"), "boss@test.dev").expect(200);
