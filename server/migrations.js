@@ -161,6 +161,27 @@ export const MIGRATIONS = [
       ALTER TABLE users ADD COLUMN IF NOT EXISTS billing_interval text;
     `,
   },
+  {
+    // Backend-only lockdown. On Supabase every public table is auto-exposed
+    // over the PostgREST REST API, and the anon key that reaches it is public
+    // (shipped in the web bundle). This app never uses PostgREST — the browser
+    // uses Supabase only for auth, and all data flows through the server's
+    // direct pg connection (the `postgres` owner role, which bypasses RLS).
+    // Enabling RLS with NO policies makes each table deny-all for the anon/
+    // authenticated roles, closing that hole, while the owner connection the
+    // server uses is unaffected. ENABLE is idempotent, so re-running is a no-op.
+    id: "007-enable-rls",
+    sql: `
+      ALTER TABLE users             ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE videos            ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE imports           ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE classify_jobs     ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE app_config        ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE api_tokens        ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE summaries         ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE schema_migrations ENABLE ROW LEVEL SECURITY;
+    `,
+  },
 ];
 
 export async function migrate(q) {
