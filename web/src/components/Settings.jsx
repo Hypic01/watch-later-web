@@ -3,6 +3,7 @@ import * as api from "../api.js";
 import { signOut } from "../auth.js";
 import { ArrowLeftIcon, LogOutIcon, SunIcon, MoonIcon } from "./icons.jsx";
 import ExtensionConnection from "./ExtensionConnection.jsx";
+import CleanupChecklist from "./CleanupChecklist.jsx";
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 const formatDate = (value) => DATE_FORMAT.format(new Date(value));
@@ -249,6 +250,11 @@ export default function Settings({
             ))}
           </div>
         )}
+      </div>
+
+      <div className="settings__block">
+        <h3>History</h3>
+        <CleanupChecklist />
       </div>
 
       <div className="settings__block settings__danger">

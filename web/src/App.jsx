@@ -4,7 +4,6 @@ import { SORTS, parseTopics } from "./lib.js";
 import { hasSession, signInWithGoogle, signInDev, isDevAuth, onAuthChange } from "./auth.js";
 import Row from "./components/Row.jsx";
 import CategoryView from "./components/CategoryView.jsx";
-import CleanupChecklist from "./components/CleanupChecklist.jsx";
 import Onboarding from "./components/Onboarding.jsx";
 import ImportPanel from "./components/ImportPanel.jsx";
 import JobProgress from "./components/JobProgress.jsx";
@@ -21,8 +20,8 @@ import {
   WLL_SYNC_PROGRESS,
 } from "./extension.js";
 import {
-  LearnIcon, EyeIcon, MusicIcon, GamepadIcon, ArchiveIcon, BoardIcon, BrandMark,
-  HistoryIcon, SettingsIcon, UploadIcon, GoogleIcon, SyncIcon,
+  LearnIcon, EyeIcon, MusicIcon, GamepadIcon, ArchiveIcon, BrandMark,
+  SettingsIcon, UploadIcon, GoogleIcon, SyncIcon,
   SunIcon, MoonIcon,
 } from "./components/icons.jsx";
 
@@ -490,7 +489,7 @@ export default function App() {
     reload();
   };
   const dismiss = async (id) => { await api.dismissVideo(id); reload(); };
-  const done = async (id) => { await api.markDone([id]); showToast("Marked done. It's on your cleanup checklist"); reload(); };
+  const done = async (id) => { await api.markDone([id]); showToast("Marked done. It's in your History, in Settings."); reload(); };
   // intent carries a card-level action into the detail view: "tldr" starts
   // the summary as soon as the detail loads, "learn" triggers the Learn flow.
   const openDetail = (video, intent = null) => {
@@ -556,13 +555,6 @@ export default function App() {
         <button className="btn btn--primary" onClick={() => { setFocus(null); setView("import"); }}>
           <UploadIcon size={15} /> Import
         </button>
-        <button className="btn btn--ghost" onClick={() => {
-          setFocus(null);
-          setView(view === "cleanup" ? "board" : "cleanup");
-        }}
-          aria-label="Cleanup checklist">
-          {view === "cleanup" ? <><BoardIcon size={15} /> Board</> : <><HistoryIcon size={15} /> Cleanup</>}
-        </button>
         <ThemeToggle />
         <button className="btn btn--ghost" onClick={() => { setFocus(null); setView("settings"); }} aria-label="Settings" title="Settings">
           <SettingsIcon size={15} />
@@ -596,8 +588,6 @@ export default function App() {
             onConnectExtension={connectExtension} extensionBusy={extensionBusy}
             extensionConnected={extensionConnected} onSyncExtension={syncExtension}
             extensionSyncing={extensionSyncing} />
-        ) : view === "cleanup" ? (
-          <CleanupChecklist />
         ) : ROWS.some((r) => r.key === view) ? (
           <CategoryView row={ROWS.find((r) => r.key === view)}
             videos={withQuery(matches(board[view]))} chips={chipsBar}
