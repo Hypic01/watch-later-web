@@ -543,8 +543,8 @@ export default function App() {
         <span className={`plan-badge plan-badge--${me.plan}`}>{me.plan}</span>
         <div className="topbar__spacer" />
         {totalVideos > 0 && (
-          <span className="wl-stat" title="scanned · waiting · total imported">
-            {me.counts.scanned.toLocaleString()} sorted · {me.counts.unscanned.toLocaleString()} waiting
+          <span className="wl-stat" title="Videos sorted into your later list">
+            {me.counts.scanned.toLocaleString()} sorted
           </span>
         )}
         {extensionConnected ? (
