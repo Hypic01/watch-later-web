@@ -12,10 +12,10 @@ if (fs.existsSync(webDist)) {
   app.use(express.static(webDist));
   app.get(["/app", "/app/*path"], (req, res) => res.sendFile(path.join(webDist, "app", "index.html")));
 } else {
-  app.get("/", (req, res) => res.type("text/plain").send("watch-later-web API. Frontend not built — run: npm run build:web"));
+  app.get("/", (req, res) => res.type("text/plain").send("laterlist API. Frontend not built — run: npm run build:web"));
 }
 
 app.listen(config.port, () => {
-  console.log(`watch-later-web listening on http://localhost:${config.port}`);
+  console.log(`laterlist listening on http://localhost:${config.port}`);
 });
 worker?.start();
