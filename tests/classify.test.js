@@ -97,4 +97,8 @@ describe("validateResults", () => {
     expect(() => validateResults({ results: [ok("a")] }, ["a", "b"])).toThrow(ClassificationError);
     expect(() => validateResults({}, ["a"])).toThrow(ClassificationError);
   });
+
+  it("rejects duplicate ids instead of silently collapsing them", () => {
+    expect(() => validateResults({ results: [ok("a"), ok("a"), ok("b")] }, ["a", "b"])).toThrow(ClassificationError);
+  });
 });
